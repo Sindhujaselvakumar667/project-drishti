@@ -280,9 +280,9 @@ class VideoProcessingService {
         this.canvas.height,
       );
 
-      // Convert to base64 for Vertex AI
-      const imageData = this.canvas.toDataURL("image/jpeg", 0.8);
-      const base64Image = imageData.split(",")[1];
+      // Resize and convert to base64 for Vertex AI (reduce payload size)
+      const resizedImageData = this.resizeCanvasForAPI(this.canvas, 640, 480);
+      const base64Image = resizedImageData.split(",")[1];
 
       // Ensure we have a valid OAuth token
       const hasValidToken = await this.ensureValidToken();
@@ -706,6 +706,38 @@ class VideoProcessingService {
    */
   getConfig() {
     return { ...this.config };
+  }
+
+  /**
+   * Resize canvas image for API to reduce payload size
+   */
+  resizeCanvasForAPI(sourceCanvas, maxWidth = 640, maxHeight = 480) {
+    const tempCanvas = document.createElement('canvas');
+    const tempContext = tempCanvas.getContext('2d');
+
+    // Calculate aspect ratio
+    const aspectRatio = sourceCanvas.width / sourceCanvas.height;
+
+    let newWidth, newHeight;
+    if (aspectRatio > 1) {
+      // Landscape
+      newWidth = Math.min(maxWidth, sourceCanvas.width);
+      newHeight = newWidth / aspectRatio;
+    } else {
+      // Portrait or square
+      newHeight = Math.min(maxHeight, sourceCanvas.height);
+      newWidth = newHeight * aspectRatio;
+    }
+
+    // Set canvas dimensions
+    tempCanvas.width = newWidth;
+    tempCanvas.height = newHeight;
+
+    // Draw resized image
+    tempContext.drawImage(sourceCanvas, 0, 0, newWidth, newHeight);
+
+    // Return base64 with reduced quality for smaller payload
+    return tempCanvas.toDataURL("image/jpeg", 0.6);
   }
 }
 
