@@ -1,5 +1,13 @@
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  limit,
+  Timestamp
+} from 'firebase/firestore';
 import { db } from '../../firebase';
-import { collection, addDoc, query, orderBy, limit, getDocs, Timestamp, onSnapshot } from 'firebase/firestore';
 
 /**
  * Alert Management System for Crowd Surge Notifications

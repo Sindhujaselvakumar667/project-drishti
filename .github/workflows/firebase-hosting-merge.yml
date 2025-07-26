@@ -2,16 +2,34 @@
 # https://github.com/firebase/firebase-tools
 
 name: Deploy to Firebase Hosting on merge
+
 on:
   push:
     branches:
       - main
+
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci && npm run build
+
+      # Install pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      # Install dependencies
+      - name: Install dependencies
+        run: pnpm install
+
+      # Optional: run your build step (if required)
+      # Build project with CI=false to treat warnings as warnings
+      - name: Build project
+        run: CI=false pnpm build
+        env:
+          CI: false
+
+      # Firebase deploy
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

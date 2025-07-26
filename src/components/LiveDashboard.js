@@ -135,7 +135,7 @@ const LiveDashboard = () => {
         alertSystem.destroy();
       }
     };
-  }, []);
+  }, []); // Empty dependency array is correct here - only run once on mount
 
   // Real-time Firestore listeners
   useEffect(() => {
@@ -174,7 +174,8 @@ const LiveDashboard = () => {
 
       // Feed data to prediction pipeline
       if (dataIngestionPipeline && predictionEnabled) {
-        dataIngestionPipeline.ingestCrowdData(getCurrentCrowdData());
+        const currentCrowdData = useVideoData ? videoCrowdData : newCrowdData;
+        dataIngestionPipeline.ingestCrowdData(currentCrowdData);
       }
 
       // Check for capacity alerts
@@ -186,7 +187,7 @@ const LiveDashboard = () => {
     }, 5000); // Update every 5 seconds
 
     return () => clearInterval(interval);
-  }, [isLiveMode, dataIngestionPipeline, predictionEnabled, alertSystem]);
+  }, [isLiveMode, dataIngestionPipeline, predictionEnabled, useVideoData, videoCrowdData, alertSystem]);
 
   // Handle zone selection
   const handleZoneClick = (zone) => {

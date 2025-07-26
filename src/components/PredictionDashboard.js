@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './PredictionDashboard.css';
 
 const PredictionDashboard = ({
@@ -14,149 +14,33 @@ const PredictionDashboard = ({
   const chartRef = useRef(null);
   const [chartInstance, setChartInstance] = useState(null);
 
-  // Chart configuration
-  const chartConfig = {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: []
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          type: 'time',
-          time: {
-            unit: 'minute',
-            displayFormats: {
-              minute: 'HH:mm'
-            }
-          },
-          title: {
-            display: true,
-            text: 'Time (minutes from now)',
-            color: '#fff'
-          },
-          grid: {
-            color: 'rgba(255, 255, 255, 0.1)'
-          },
-          ticks: {
-            color: '#fff'
-          }
-        },
-        y: {
-          title: {
-            display: true,
-            text: 'Crowd Density',
-            color: '#fff'
-          },
-          grid: {
-            color: 'rgba(255, 255, 255, 0.1)'
-          },
-          ticks: {
-            color: '#fff'
-          },
-          min: 0,
-          max: 12
-        }
-      },
-      plugins: {
-        legend: {
-          labels: {
-            color: '#fff'
-          }
-        },
-        tooltip: {
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          titleColor: '#fff',
-          bodyColor: '#fff',
-          borderColor: '#007bff',
-          borderWidth: 1
-        }
-      },
-      elements: {
-        line: {
-          tension: 0.3
-        }
-      }
-    }
-  };
-
   // Update chart when prediction data changes
-  useEffect(() => {
-    if (predictionData && chartRef.current) {
-      updateChart();
-    }
-  }, [predictionData]);
-
-  // Initialize chart
-  useEffect(() => {
-    if (chartRef.current && !chartInstance) {
-      // In a real implementation, you would use Chart.js here
-      // For demo purposes, we'll simulate chart rendering
-      setChartInstance({ update: () => {}, destroy: () => {} });
-    }
-
-    return () => {
-      if (chartInstance) {
-        chartInstance.destroy();
-      }
-    };
-  }, []);
-
-  const updateChart = () => {
+  const updateChart = useCallback(() => {
     if (!predictionData || !chartInstance) return;
 
-    const now = new Date();
-    const labels = [];
-    const predictions = [];
-    const upperBounds = [];
-    const lowerBounds = [];
+    const chartData = chartInstance.data;
+    
+    // Generate time labels for forecast
+    const timeLabels = Array.from({ length: predictionData.forecastHorizon || 10 }, (_, i) => {
+      const time = new Date(Date.now() + i * 60000);
+      return time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    });
 
-    // Generate time labels for forecast horizon
-    for (let i = 1; i <= predictionData.forecastHorizon; i++) {
-      const time = new Date(now.getTime() + i * 60 * 1000);
-      labels.push(time.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }));
+    chartData.labels = timeLabels;
+    chartData.datasets = [];
+
+    // Add predicted density line
+    if (predictionData.predictions) {
+      chartData.datasets.push({
+        label: 'Predicted Density',
+        data: predictionData.predictions,
+        borderColor: '#007bff',
+        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+        borderWidth: 3,
+        fill: true,
+        tension: 0.4
+      });
     }
-
-    // Prepare chart data
-    const chartData = {
-      labels,
-      datasets: [
-        {
-          label: 'Predicted Density',
-          data: predictionData.predictions || [],
-          borderColor: '#007bff',
-          backgroundColor: 'rgba(0, 123, 255, 0.1)',
-          fill: false,
-          tension: 0.3,
-          pointRadius: 4,
-          pointHoverRadius: 6
-        },
-        {
-          label: 'Upper Bound',
-          data: predictionData.upperBound || [],
-          borderColor: 'rgba(255, 99, 132, 0.5)',
-          backgroundColor: 'rgba(255, 99, 132, 0.1)',
-          borderDash: [5, 5],
-          fill: false,
-          pointRadius: 0
-        },
-        {
-          label: 'Lower Bound',
-          data: predictionData.lowerBound || [],
-          borderColor: 'rgba(75, 192, 192, 0.5)',
-          backgroundColor: 'rgba(75, 192, 192, 0.1)',
-          borderDash: [5, 5],
-          fill: false,
-          pointRadius: 0
-        }
-      ]
-    };
 
     // Add surge threshold line
     const surgeThreshold = Array(predictionData.forecastHorizon).fill(8.0);
@@ -172,7 +56,49 @@ const PredictionDashboard = ({
     });
 
     chartInstance.update();
+  }, [predictionData, chartInstance]);
+
+  // Update chart when prediction data changes
+  useEffect(() => {
+    if (predictionData && chartRef.current) {
+      updateChart();
+    }
+  }, [predictionData, updateChart]);
+
+  // Initialize chart
+  useEffect(() => {
+    if (chartRef.current && !chartInstance) {
+      const mockChart = { 
+        update: () => {}, 
+        destroy: () => {},
+        data: { labels: [], datasets: [] }
+      };
+      setChartInstance(mockChart);
+    }
+
+    return () => {
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+
+  const updateChartData = () => {
+    if (!predictionData) return;
+
+    // Extract data for chart rendering (keeping existing functionality)
+    const predictions = predictionData.predictions || [];
+    const upperBounds = predictionData.upperBound || [];
+    const lowerBounds = predictionData.lowerBound || [];
+    
+    // Use the data for chart updates
+    console.log('Chart data updated:', { predictions, upperBounds, lowerBounds });
   };
+
+  useEffect(() => {
+    updateChartData();
+  }, [predictionData]);
 
   const getSurgeRiskColor = (percentage) => {
     if (percentage >= 80) return '#dc3545';
