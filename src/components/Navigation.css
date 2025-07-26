@@ -1,0 +1,266 @@
+/* Navigation Styles */
+.dashboard-navigation {
+  background: rgba(15, 15, 35, 0.95);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(120, 219, 255, 0.2);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 280px;
+  max-width: 320px;
+}
+
+.nav-header {
+  margin-bottom: 2rem;
+  text-align: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(120, 219, 255, 0.2);
+}
+
+.nav-header h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #78dbff 0%, #ff77c6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.nav-header p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.nav-items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nav-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(120, 219, 255, 0.1);
+  border-radius: 12px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+  color: white;
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s;
+}
+
+.nav-item:hover::before {
+  left: 100%;
+}
+
+.nav-item:hover {
+  background: rgba(120, 219, 255, 0.1);
+  border-color: rgba(120, 219, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(120, 219, 255, 0.2);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(120, 219, 255, 0.2) 0%, rgba(255, 119, 198, 0.1) 100%);
+  border-color: #78dbff;
+  box-shadow: 0 0 20px rgba(120, 219, 255, 0.3);
+}
+
+.nav-icon {
+  font-size: 1.5rem;
+  min-width: 2rem;
+  text-align: center;
+}
+
+.nav-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.nav-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.nav-description {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.2;
+}
+
+.nav-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(120, 219, 255, 0.2);
+}
+
+.system-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  animation: statusPulse 2s infinite;
+}
+
+.status-dot.live {
+  background: #00ff88;
+  box-shadow: 0 0 10px #00ff88;
+}
+
+@keyframes statusPulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .dashboard-navigation {
+    min-width: 260px;
+    max-width: 300px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .dashboard-navigation {
+    min-width: 240px;
+    max-width: 260px;
+  }
+
+  .nav-header h2 {
+    font-size: 1.6rem;
+  }
+
+  .nav-item {
+    padding: 0.875rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .dashboard-navigation {
+    min-width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 200px;
+    padding: 1rem;
+    border-right: none;
+    border-bottom: 1px solid rgba(120, 219, 255, 0.2);
+  }
+
+  .nav-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .nav-header h2 {
+    font-size: 1.4rem;
+  }
+
+  .nav-header p {
+    font-size: 0.8rem;
+  }
+
+  .nav-items {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .nav-item {
+    padding: 0.75rem;
+    min-width: 140px;
+    flex-shrink: 0;
+  }
+
+  .nav-icon {
+    font-size: 1.2rem;
+    min-width: 1.5rem;
+  }
+
+  .nav-label {
+    font-size: 0.85rem;
+  }
+
+  .nav-description {
+    font-size: 0.7rem;
+    display: none;
+  }
+
+  .nav-footer {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-navigation {
+    padding: 0.75rem;
+  }
+
+  .nav-header {
+    margin-bottom: 0.75rem;
+  }
+
+  .nav-item {
+    padding: 0.5rem;
+    min-width: 120px;
+  }
+
+  .nav-icon {
+    font-size: 1rem;
+  }
+
+  .nav-label {
+    font-size: 0.8rem;
+  }
+}

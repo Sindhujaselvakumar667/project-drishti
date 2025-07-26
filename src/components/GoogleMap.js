@@ -17,18 +17,22 @@ const GoogleMap = ({
   const [heatmap, setHeatmap] = useState(null);
   const [markers, setMarkers] = useState([]);
   const [zoneOverlays, setZoneOverlays] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Initialize Google Maps
   useEffect(() => {
     const initMap = async () => {
       const loader = new Loader({
         apiKey:
-          process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "YOUR_API_KEY_HERE",
+          process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "AIzaSyBqvZbeCQTuBNVqD6DtpiLY_mlecmF8HYE",
         version: "weekly",
         libraries: ["visualization", "geometry"],
       });
 
       try {
+        setIsLoading(true);
+        setError(null);
         const google = await loader.load();
 
         const mapInstance = new google.maps.Map(mapRef.current, {
@@ -45,9 +49,12 @@ const GoogleMap = ({
         });
 
         setMap(mapInstance);
+        setIsLoading(false);
         onMapLoad(mapInstance);
       } catch (error) {
         console.error("Error loading Google Maps:", error);
+        setError(error.message || "Failed to load Google Maps");
+        setIsLoading(false);
       }
     };
 
@@ -201,6 +208,59 @@ const GoogleMap = ({
     return icons[type] || icons.security;
   };
 
+  if (error) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          minHeight: "400px",
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#1a1a1a",
+          color: "#ff6b6b",
+          fontSize: "16px",
+          textAlign: "center",
+          padding: "20px",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "24px", marginBottom: "10px" }}>⚠️</div>
+          <div>Failed to load Google Maps</div>
+          <div style={{ fontSize: "14px", opacity: 0.7, marginTop: "5px" }}>
+            {error}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          minHeight: "400px",
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#1a1a1a",
+          color: "#78dbff",
+          fontSize: "16px",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "24px", marginBottom: "10px" }}>🗺️</div>
+          <div>Loading Google Maps...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={mapRef}
@@ -208,6 +268,10 @@ const GoogleMap = ({
         width: "100%",
         height: "100%",
         minHeight: "400px",
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
       }}
     />
   );

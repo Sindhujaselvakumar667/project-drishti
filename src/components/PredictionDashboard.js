@@ -84,21 +84,21 @@ const PredictionDashboard = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
-  const updateChartData = () => {
+  const updateChartData = useCallback(() => {
     if (!predictionData) return;
 
     // Extract data for chart rendering (keeping existing functionality)
     const predictions = predictionData.predictions || [];
     const upperBounds = predictionData.upperBound || [];
     const lowerBounds = predictionData.lowerBound || [];
-    
+
     // Use the data for chart updates
     console.log('Chart data updated:', { predictions, upperBounds, lowerBounds });
-  };
+  }, [predictionData]);
 
   useEffect(() => {
     updateChartData();
-  }, [predictionData]);
+  }, [updateChartData]);
 
   const getSurgeRiskColor = (percentage) => {
     if (percentage >= 80) return '#dc3545';

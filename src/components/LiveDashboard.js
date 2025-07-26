@@ -5,9 +5,11 @@ import GoogleMap from "./GoogleMap";
 import VideoFeed from "./VideoFeed";
 import CrowdHeatmap from "./CrowdHeatmap";
 import PredictionDashboard from "./PredictionDashboard";
+import DataInsightsDashboard from "./DataInsightsDashboard";
 import DataIngestionPipeline from "../services/prediction/dataIngestionPipeline";
 import VertexAIForecastingService from "../services/prediction/vertexAIForecasting";
 import AlertManagementSystem from "../services/prediction/alertManagement";
+import AIOrchestrationService from "../services/aiOrchestrationService";
 import {
   mockEventCenter,
   mockCrowdData,
@@ -48,6 +50,23 @@ const LiveDashboard = () => {
   const [dataIngestionPipeline, setDataIngestionPipeline] = useState(null);
   const [forecastingService, setForecastingService] = useState(null);
   const [alertSystem, setAlertSystem] = useState(null);
+
+  // AI Orchestration state
+  const [aiOrchestration, setAiOrchestration] = useState(null);
+  const [intelligenceState, setIntelligenceState] = useState({
+    overallThreatLevel: 'low',
+    activeInsights: [],
+    aiRecommendations: [],
+    systemHealth: {
+      gemini: 'offline',
+      vertexAI: 'offline',
+      vision: 'offline',
+      forecasting: 'offline'
+    }
+  });
+  const [aiAlerts, setAiAlerts] = useState([]);
+  const [lostAndFoundCases, setLostAndFoundCases] = useState([]);
+  const [showInsightsDashboard, setShowInsightsDashboard] = useState(false);
 
   // Initialize prediction services
   useEffect(() => {
@@ -115,7 +134,40 @@ const LiveDashboard = () => {
         alerts.requestNotificationPermissions();
         setAlertSystem(alerts);
 
-        console.log("Prediction services initialized");
+        // Initialize AI Orchestration Service
+        const aiService = new AIOrchestrationService();
+        await aiService.initialize({
+          onIntelligenceUpdate: (intelligence) => {
+            setIntelligenceState(intelligence);
+            console.log("Intelligence update:", intelligence);
+          },
+          onCriticalAlert: (alert) => {
+            setAiAlerts((prev) => [...prev, alert]);
+            console.log("Critical AI alert:", alert);
+
+            // Show browser notification for critical alerts
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('🚨 CRITICAL AI ALERT', {
+                body: alert.message,
+                icon: '/favicon.ico',
+                tag: 'critical-ai'
+              });
+            }
+          },
+          onSystemHealthChange: (health) => {
+            setIntelligenceState(prev => ({
+              ...prev,
+              systemHealth: health
+            }));
+            console.log("AI system health:", health);
+          },
+          onError: (message, error) => {
+            console.error("AI Orchestration error:", message, error);
+          }
+        });
+        setAiOrchestration(aiService);
+
+        console.log("All AI services initialized successfully");
       } catch (error) {
         console.error("Failed to initialize prediction services:", error);
       }
@@ -133,6 +185,9 @@ const LiveDashboard = () => {
       }
       if (alertSystem) {
         alertSystem.destroy();
+      }
+      if (aiOrchestration) {
+        aiOrchestration.destroy();
       }
     };
   }, []); // Empty dependency array is correct here - only run once on mount
@@ -374,9 +429,8 @@ const LiveDashboard = () => {
 
   return (
     <div className="live-dashboard">
-      {/* Header */}
-      <header className="dashboard-header">
-        <h1>🔥 Drishti Live Event Dashboard</h1>
+      {/* Dashboard Controls Header */}
+      <div className="dashboard-controls-header">
         <div className="header-controls">
           <div className="status-indicator">
             <span
@@ -404,8 +458,16 @@ const LiveDashboard = () => {
               ? "🔮 AI Predictions ON"
               : "🔮 AI Predictions OFF"}
           </button>
+          <button
+            className={`toggle-btn insights-btn ${showInsightsDashboard ? "active" : ""}`}
+            onClick={() => setShowInsightsDashboard(!showInsightsDashboard)}
+          >
+            {showInsightsDashboard
+              ? "📊 Hide Insights"
+              : "📊 Data Insights"}
+          </button>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
       <div className="dashboard-content">
@@ -699,6 +761,78 @@ const LiveDashboard = () => {
             </div>
           )}
 
+          {/* AI Intelligence Panel */}
+          <div className="ai-intelligence-panel">
+            <h3>🧠 AI Intelligence Center</h3>
+            <div className="ai-status">
+              <div className="status-item">
+                <span className="status-label">Threat Level:</span>
+                <span className={`status-value threat-${intelligenceState.overallThreatLevel}`}>
+                  {intelligenceState.overallThreatLevel.toUpperCase()}
+                </span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Active Insights:</span>
+                <span className="status-value">{intelligenceState.activeInsights.length}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">AI Recommendations:</span>
+                <span className="status-value">{intelligenceState.aiRecommendations.length}</span>
+              </div>
+            </div>
+
+            <div className="ai-services-health">
+              <h4>🔧 AI Services Status</h4>
+              <div className="service-status-grid">
+                <div className="service-item">
+                  <span className="service-name">Gemini AI</span>
+                  <span className={`service-status ${intelligenceState.systemHealth.gemini}`}>
+                    {intelligenceState.systemHealth.gemini}
+                  </span>
+                </div>
+                <div className="service-item">
+                  <span className="service-name">Vertex AI</span>
+                  <span className={`service-status ${intelligenceState.systemHealth.vertexAI}`}>
+                    {intelligenceState.systemHealth.vertexAI}
+                  </span>
+                </div>
+                <div className="service-item">
+                  <span className="service-name">Vision API</span>
+                  <span className={`service-status ${intelligenceState.systemHealth.vision}`}>
+                    {intelligenceState.systemHealth.vision}
+                  </span>
+                </div>
+                <div className="service-item">
+                  <span className="service-name">Forecasting</span>
+                  <span className={`service-status ${intelligenceState.systemHealth.forecasting}`}>
+                    {intelligenceState.systemHealth.forecasting}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* AI Alerts */}
+            {aiAlerts.length > 0 && (
+              <div className="ai-alerts-section">
+                <h4>⚡ AI Alerts</h4>
+                <div className="ai-alerts-list">
+                  {aiAlerts.slice(-3).map((alert, index) => (
+                    <div key={index} className={`ai-alert-item ${alert.severity}`}>
+                      <div className="alert-header">
+                        <span className="alert-type">{alert.type}</span>
+                        <span className="alert-confidence">
+                          {(alert.confidence * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="alert-message">{alert.message}</div>
+                      <div className="alert-source">Source: {alert.source}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Active Alerts */}
           <div className="alerts-panel">
             <h3>🚨 Active Alerts</h3>
@@ -785,6 +919,47 @@ const LiveDashboard = () => {
             </div>
           )}
         </aside>
+      </div>
+
+      {/* Data Insights Dashboard */}
+      <DataInsightsDashboard
+        isVisible={showInsightsDashboard}
+        crowdData={useVideoData ? videoCrowdData : crowdData}
+        alertData={alerts}
+        predictionData={predictionData}
+      />
+
+      {/* Emergency Floating Action Button */}
+      <button
+        className="emergency-fab"
+        onClick={() => {
+          if (alertSystem) {
+            alertSystem.createEmergencyAlert({
+              type: 'EMERGENCY_OVERRIDE',
+              severity: 'Critical',
+              message: 'Emergency situation declared - Manual override activated',
+              timestamp: new Date().toISOString(),
+              zone: 'All Zones'
+            });
+          }
+          // Add emergency notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('🚨 EMERGENCY ALERT', {
+              body: 'Emergency situation declared. All units respond immediately.',
+              icon: '/favicon.ico',
+              tag: 'emergency'
+            });
+          }
+        }}
+        title="Emergency Alert - Click to declare emergency situation"
+      >
+        🚨
+      </button>
+
+      {/* AI Status Indicator */}
+      <div className="ai-status-indicator">
+        <div className={`ai-status-dot ${modelStatus}`}></div>
+        <span>AI Model: {modelStatus}</span>
       </div>
     </div>
   );

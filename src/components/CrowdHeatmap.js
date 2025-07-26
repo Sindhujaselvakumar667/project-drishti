@@ -30,9 +30,14 @@ const CrowdHeatmap = ({
       setError(null);
 
       try {
+        const apiKey = "AIzaSyBqvZbeCQTuBNVqD6DtpiLY_mlecmF8HYE";
+
+        if (!apiKey || apiKey === 'your_google_maps_api_key_here') {
+          throw new Error('Google Maps API key is not configured. Please set REACT_APP_GOOGLE_MAPS_API_KEY in your .env.local file.');
+        }
+
         const loader = new Loader({
-          apiKey:
-            process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "YOUR_API_KEY_HERE",
+          apiKey: apiKey,
           version: "weekly",
           libraries: ["visualization", "geometry"],
         });
@@ -59,9 +64,13 @@ const CrowdHeatmap = ({
         setIsLoading(false);
       } catch (error) {
         console.error("Error loading Google Maps:", error);
-        setError(
-          "Failed to load map. Please check your API key and internet connection.",
-        );
+
+        // Provide specific error messages
+        if (error.message.includes('API key')) {
+          setError("Google Maps API key is not configured. Please add your API key to .env.local file.");
+        } else {
+          setError("Failed to load map. Please check your API key and internet connection.");
+        }
         setIsLoading(false);
       }
     };
@@ -305,6 +314,81 @@ const CrowdHeatmap = ({
   const stats = getCrowdStats();
 
   if (error) {
+    // If it's an API key error, show a demo fallback instead of error
+    if (error.includes('API key')) {
+      return (
+        <div className={`crowd-heatmap-container ${className}`} style={style}>
+          <div className="demo-map-notice">
+            <h4>🗺️ Demo Mode - Crowd Heatmap Visualization</h4>
+            <p>Google Maps API key not configured. Showing demo visualization.</p>
+          </div>
+
+          {/* Demo Heatmap Visualization */}
+          <div className="demo-heatmap">
+            <div className="demo-map-background">
+              <div className="demo-grid">
+                {crowdData.map((point, index) => (
+                  <div
+                    key={index}
+                    className="demo-heat-point"
+                    style={{
+                      left: `${((point.lng + 122.4194) * 1000) % 100}%`,
+                      top: `${((point.lat - 37.7749) * 1000) % 100}%`,
+                      backgroundColor: `rgba(255, ${255 - point.density * 20}, 0, ${0.3 + point.density * 0.07})`,
+                      width: `${Math.max(10, point.density * 3)}px`,
+                      height: `${Math.max(10, point.density * 3)}px`,
+                    }}
+                    title={`Density: ${point.density}`}
+                  />
+                ))}
+              </div>
+              <div className="demo-map-overlay">
+                <div className="demo-location-marker">📍 Event Center</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Heatmap Legend */}
+          {showHeatmap && crowdData.length > 0 && (
+            <div className="heatmap-legend">
+              <h4>Crowd Density</h4>
+              <div className="legend-gradient">
+                <span className="legend-label">Low</span>
+                <div className="gradient-bar"></div>
+                <span className="legend-label">High</span>
+              </div>
+              <div className="legend-scale">
+                <span>1</span>
+                <span>5</span>
+                <span>10</span>
+              </div>
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="heatmap-stats">
+            <div className="stat">
+              <span className="stat-label">Data Points:</span>
+              <span className="stat-value">{stats.totalPoints}</span>
+            </div>
+            <div className="stat">
+              <span className="stat-label">Avg Density:</span>
+              <span className="stat-value">{stats.averageDensity}</span>
+            </div>
+            <div className="stat">
+              <span className="stat-label">Max Density:</span>
+              <span className="stat-value">{stats.maxDensity}</span>
+            </div>
+            <div className="stat">
+              <span className="stat-label">Critical Areas:</span>
+              <span className="stat-value critical">{stats.criticalAreas}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // For other errors, show the error message
     return (
       <div className={`crowd-heatmap-error ${className}`} style={style}>
         <div className="error-content">
