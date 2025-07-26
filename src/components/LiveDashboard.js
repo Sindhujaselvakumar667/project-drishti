@@ -4,6 +4,10 @@ import { collection, onSnapshot, addDoc } from "firebase/firestore";
 import GoogleMap from "./GoogleMap";
 import VideoFeed from "./VideoFeed";
 import CrowdHeatmap from "./CrowdHeatmap";
+import PredictionDashboard from "./PredictionDashboard";
+import DataIngestionPipeline from "../services/prediction/dataIngestionPipeline";
+import VertexAIForecastingService from "../services/prediction/vertexAIForecasting";
+import AlertManagementSystem from "../services/prediction/alertManagement";
 import {
   mockEventCenter,
   mockCrowdData,
@@ -36,6 +40,103 @@ const LiveDashboard = () => {
   const [videoStatus, setVideoStatus] = useState("stopped");
   const [useVideoData, setUseVideoData] = useState(false);
 
+  // Prediction system state
+  const [predictionEnabled, setPredictionEnabled] = useState(false);
+  const [predictionData, setPredictionData] = useState(null);
+  const [predictionAlerts, setPredictionAlerts] = useState([]);
+  const [modelStatus, setModelStatus] = useState("offline");
+  const [dataIngestionPipeline, setDataIngestionPipeline] = useState(null);
+  const [forecastingService, setForecastingService] = useState(null);
+  const [alertSystem, setAlertSystem] = useState(null);
+
+  // Initialize prediction services
+  useEffect(() => {
+    const initializePredictionServices = async () => {
+      try {
+        // Initialize data ingestion pipeline
+        const pipeline = new DataIngestionPipeline();
+        await pipeline.start({
+          onDataCollected: () => console.log("Data collected"),
+          onBatchProcessed: (batchData) => {
+            console.log("Batch processed:", batchData);
+            // Trigger predictions when new data is available
+            if (forecastingService) {
+              makePrediction();
+            }
+          },
+          onError: (message, error) =>
+            console.error("Pipeline error:", message, error),
+        });
+        setDataIngestionPipeline(pipeline);
+
+        // Initialize forecasting service
+        const forecasting = new VertexAIForecastingService();
+        await forecasting.initialize({
+          onPredictionUpdate: (prediction) => {
+            setPredictionData(prediction);
+            console.log("New prediction:", prediction);
+          },
+          onSurgeAlert: (alert) => {
+            console.log("Surge alert:", alert);
+            if (alertSystem) {
+              alertSystem.createSurgeAlert(alert);
+            }
+          },
+          onError: (message, error) =>
+            console.error("Forecasting error:", message, error),
+          onModelStatusChange: (status) => {
+            setModelStatus(status);
+            console.log("Model status:", status);
+          },
+        });
+        setForecastingService(forecasting);
+
+        // Initialize alert management system
+        const alerts = new AlertManagementSystem();
+        await alerts.initialize({
+          onAlertCreated: (alert) => {
+            setPredictionAlerts((prev) => [...prev, alert]);
+            console.log("Alert created:", alert);
+          },
+          onAlertEscalated: (alert) => {
+            console.log("Alert escalated:", alert);
+          },
+          onAlertResolved: (alert) => {
+            setPredictionAlerts((prev) =>
+              prev.filter((a) => a.id !== alert.id),
+            );
+            console.log("Alert resolved:", alert);
+          },
+          onError: (message, error) =>
+            console.error("Alert system error:", message, error),
+        });
+
+        // Request notification permissions
+        alerts.requestNotificationPermissions();
+        setAlertSystem(alerts);
+
+        console.log("Prediction services initialized");
+      } catch (error) {
+        console.error("Failed to initialize prediction services:", error);
+      }
+    };
+
+    initializePredictionServices();
+
+    return () => {
+      // Cleanup services
+      if (dataIngestionPipeline) {
+        dataIngestionPipeline.destroy();
+      }
+      if (forecastingService) {
+        forecastingService.destroy();
+      }
+      if (alertSystem) {
+        alertSystem.destroy();
+      }
+    };
+  }, []);
+
   // Real-time Firestore listeners
   useEffect(() => {
     if (!isLiveMode) return;
@@ -64,13 +165,28 @@ const LiveDashboard = () => {
     if (!isLiveMode) return;
 
     const interval = setInterval(() => {
-      setCrowdData(generateRandomCrowdUpdate());
+      const newCrowdData = generateRandomCrowdUpdate();
+      const newZones = generateZoneUpdate();
+
+      setCrowdData(newCrowdData);
       setResponderData(generateRandomResponderUpdate());
-      setZones(generateZoneUpdate());
+      setZones(newZones);
+
+      // Feed data to prediction pipeline
+      if (dataIngestionPipeline && predictionEnabled) {
+        dataIngestionPipeline.ingestCrowdData(getCurrentCrowdData());
+      }
+
+      // Check for capacity alerts
+      newZones.forEach((zone) => {
+        if (zone.alertLevel === "Critical" && alertSystem) {
+          alertSystem.createCapacityAlert(zone);
+        }
+      });
     }, 5000); // Update every 5 seconds
 
     return () => clearInterval(interval);
-  }, [isLiveMode]);
+  }, [isLiveMode, dataIngestionPipeline, predictionEnabled, alertSystem]);
 
   // Handle zone selection
   const handleZoneClick = (zone) => {
@@ -81,16 +197,45 @@ const LiveDashboard = () => {
   const handleVideoCrowdData = (data) => {
     setVideoCrowdData(data);
 
-    // Store video data to Firestore for persistence
+    // Feed real-time data to prediction pipeline
+    if (dataIngestionPipeline && predictionEnabled && data && data.length > 0) {
+      const realTimeData = {
+        totalPeople:
+          data
+            .filter((point) => point.isTotal)
+            .reduce((sum, point) => sum + point.personCount, 0) ||
+          data.reduce((sum, point) => sum + point.personCount, 0),
+        avgDensity:
+          data.reduce((sum, point) => sum + point.density, 0) / data.length,
+        timestamp: new Date().toISOString(),
+        source: "video_ai",
+        confidence:
+          data.reduce((sum, point) => sum + (point.confidence || 0), 0) /
+          data.length,
+      };
+
+      dataIngestionPipeline.ingestCrowdData([realTimeData]);
+    }
+
+    // Store video data to Firestore for persistence (batch operations for performance)
     if (data && data.length > 0) {
       try {
-        data.forEach(async (point) => {
-          await addDoc(collection(db, "CrowdDensity"), {
-            ...point,
-            source: "video_ai",
-            eventId: "current_event",
+        // Only store significant data points to avoid overwhelming Firestore
+        const significantPoints = data.filter(
+          (point) =>
+            point.personCount > 0 || point.isTotal || point.density > 3,
+        );
+
+        if (significantPoints.length > 0) {
+          significantPoints.forEach(async (point) => {
+            await addDoc(collection(db, "CrowdDensity"), {
+              ...point,
+              source: "video_ai",
+              eventId: "current_event",
+              processingTime: Date.now(),
+            });
           });
-        });
+        }
       } catch (error) {
         console.error("Error storing video crowd data:", error);
       }
@@ -106,6 +251,63 @@ const LiveDashboard = () => {
   const handleVideoError = (message, error) => {
     console.error("Video Feed Error:", message, error);
     // Could show a toast notification here
+  };
+
+  // Make AI prediction
+  const makePrediction = async () => {
+    if (!forecastingService || !predictionEnabled) return;
+
+    try {
+      const currentData = {
+        totalPeople: getCurrentCrowdData().reduce(
+          (sum, point) => sum + (point.personCount || 1),
+          0,
+        ),
+        avgDensity:
+          getCurrentCrowdData().reduce((sum, point) => sum + point.density, 0) /
+            getCurrentCrowdData().length || 0,
+        avgVelocity: 1.2, // Mock velocity data
+        congestionScore:
+          zones.filter((z) => z.alertLevel === "Critical").length * 2,
+        hotspotCount: getCurrentCrowdData().filter((point) => point.density > 7)
+          .length,
+      };
+
+      const prediction =
+        await forecastingService.predictCrowdSurge(currentData);
+      setPredictionData(prediction);
+    } catch (error) {
+      console.error("Prediction failed:", error);
+    }
+  };
+
+  // Toggle prediction system
+  const togglePredictionSystem = async () => {
+    setPredictionEnabled(!predictionEnabled);
+
+    if (!predictionEnabled) {
+      // Start prediction system
+      if (dataIngestionPipeline) {
+        await makePrediction();
+      }
+    }
+  };
+
+  // Handle prediction alert actions
+  const handleAlertAcknowledge = async (alertId) => {
+    if (alertSystem) {
+      await alertSystem.acknowledgeAlert(alertId, "Dashboard User");
+    }
+  };
+
+  const handleAlertResolve = async (alertId) => {
+    if (alertSystem) {
+      await alertSystem.resolveAlert(
+        alertId,
+        "Dashboard User",
+        "Resolved from dashboard",
+      );
+    }
   };
 
   // Add test alert to Firestore
@@ -152,9 +354,21 @@ const LiveDashboard = () => {
   // Get current crowd data based on selected source
   const getCurrentCrowdData = () => {
     if (useVideoData && videoCrowdData.length > 0) {
-      return videoCrowdData;
+      // Filter out summary points to avoid double counting
+      return videoCrowdData.filter((point) => !point.isTotal);
     }
     return crowdData;
+  };
+
+  // Get total people count from video data
+  const getTotalPeopleCount = () => {
+    if (useVideoData && videoCrowdData.length > 0) {
+      const totalPoint = videoCrowdData.find((point) => point.isTotal);
+      return totalPoint
+        ? totalPoint.personCount
+        : videoCrowdData.reduce((sum, point) => sum + point.personCount, 0);
+    }
+    return crowdData.reduce((sum, point) => sum + (point.personCount || 1), 0);
   };
 
   return (
@@ -180,6 +394,14 @@ const LiveDashboard = () => {
             onClick={() => setVideoEnabled(!videoEnabled)}
           >
             {videoEnabled ? "📹 Hide Video" : "📹 Show Video"}
+          </button>
+          <button
+            className={`toggle-btn prediction-btn ${predictionEnabled ? "active" : ""}`}
+            onClick={togglePredictionSystem}
+          >
+            {predictionEnabled
+              ? "🔮 AI Predictions ON"
+              : "🔮 AI Predictions OFF"}
           </button>
         </div>
       </header>
@@ -207,8 +429,13 @@ const LiveDashboard = () => {
             <div className="stat-item">
               <span className="stat-label">Current Count:</span>
               <span className="stat-value">
-                {stats.totalCurrent.toLocaleString()}
+                {useVideoData
+                  ? getTotalPeopleCount().toLocaleString()
+                  : stats.totalCurrent.toLocaleString()}
               </span>
+              {useVideoData && (
+                <span className="stat-source">🤖 AI Detection</span>
+              )}
             </div>
             <div className="stat-item">
               <span className="stat-label">Occupancy Rate:</span>
@@ -260,13 +487,23 @@ const LiveDashboard = () => {
               📹 Video Feed
             </label>
             <label className="control-item">
-              <input
-                type="checkbox"
-                checked={useVideoData}
-                onChange={(e) => setUseVideoData(e.target.checked)}
-                disabled={!videoEnabled || videoCrowdData.length === 0}
-              />
-              🤖 Use AI Data
+              <div className="data-controls">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={useVideoData}
+                    onChange={(e) => setUseVideoData(e.target.checked)}
+                  />
+                  🤖 Use AI Data for Map
+                </label>
+                {useVideoData && videoCrowdData.length > 0 && (
+                  <div className="ai-status">
+                    <span className="ai-indicator">
+                      🎯 Live AI: {getTotalPeopleCount()} people detected
+                    </span>
+                  </div>
+                )}
+              </div>
             </label>
           </div>
 
@@ -307,7 +544,58 @@ const LiveDashboard = () => {
 
         {/* Main Map Area */}
         <main className="map-container">
-          {videoEnabled ? (
+          {predictionEnabled ? (
+            <div className="dashboard-split">
+              <div className="map-prediction-split">
+                {videoEnabled ? (
+                  <div className="map-video-split">
+                    <div className="video-section">
+                      <VideoFeed
+                        onCrowdDataUpdate={handleVideoCrowdData}
+                        onStatusChange={handleVideoStatusChange}
+                        onError={handleVideoError}
+                        cameraLocation={mockEventCenter}
+                        autoStart={false}
+                      />
+                    </div>
+                    <div className="map-section">
+                      <CrowdHeatmap
+                        center={mockEventCenter}
+                        zoom={15}
+                        crowdData={getCurrentCrowdData()}
+                        zones={zones}
+                        showHeatmap={showHeatmap}
+                        showZones={showZones}
+                        onMapLoad={(map) => console.log("Map loaded:", map)}
+                        onZoneClick={handleZoneClick}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <GoogleMap
+                    center={mockEventCenter}
+                    zoom={15}
+                    crowdData={getCurrentCrowdData()}
+                    responderData={responderData}
+                    zones={zones}
+                    showHeatmap={showHeatmap}
+                    showResponders={showResponders}
+                    showZones={showZones}
+                    onMapLoad={(map) => console.log("Map loaded:", map)}
+                  />
+                )}
+              </div>
+              <div className="prediction-section">
+                <PredictionDashboard
+                  predictionData={predictionData}
+                  alertData={predictionAlerts}
+                  onAlertAcknowledge={handleAlertAcknowledge}
+                  onAlertResolve={handleAlertResolve}
+                  isVisible={predictionEnabled}
+                />
+              </div>
+            </div>
+          ) : videoEnabled ? (
             <div className="map-video-split">
               <div className="video-section">
                 <VideoFeed
@@ -348,6 +636,43 @@ const LiveDashboard = () => {
 
         {/* Right Sidebar - Alerts & Activity */}
         <aside className="alerts-sidebar">
+          {/* AI Prediction Status Panel */}
+          {predictionEnabled && (
+            <div className="prediction-status-panel">
+              <h3>🔮 AI Prediction System</h3>
+              <div className="prediction-status">
+                <div className="status-item">
+                  <span className="status-label">Model Status:</span>
+                  <span className={`status-value ${modelStatus}`}>
+                    {modelStatus}
+                  </span>
+                </div>
+                <div className="status-item">
+                  <span className="status-label">Last Prediction:</span>
+                  <span className="status-value">
+                    {predictionData?.timestamp
+                      ? new Date(predictionData.timestamp).toLocaleTimeString()
+                      : "No prediction"}
+                  </span>
+                </div>
+                <div className="status-item">
+                  <span className="status-label">Surge Risk:</span>
+                  <span
+                    className={`status-value ${predictionData?.alertLevel || "normal"}`}
+                  >
+                    {predictionData?.surgeRisk?.percentage || 0}%
+                  </span>
+                </div>
+                <div className="status-item">
+                  <span className="status-label">Active Alerts:</span>
+                  <span className="status-value">
+                    {predictionAlerts.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Video Status Panel */}
           {videoEnabled && (
             <div className="video-status-panel">

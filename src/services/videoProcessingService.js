@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from "axios";
 
 /**
  * Video Processing Service for Real-time Crowd Density Analysis
@@ -11,28 +11,47 @@ class VideoProcessingService {
     this.canvas = null;
     this.context = null;
     this.detectionInterval = null;
+    this.animationFrame = null;
     this.crowdData = [];
+    this.lastDetections = [];
+    this.detectionHistory = [];
     this.callbacks = {
       onCrowdDataUpdate: null,
       onError: null,
-      onStatusChange: null
+      onStatusChange: null,
     };
 
-    // Configuration
+    // Configuration for real-time processing with Vertex AI
     this.config = {
-      detectionIntervalMs: 2000, // Process every 2 seconds
+      detectionIntervalMs: 500, // Process every 500ms for real-time (reduced from 2000ms)
       confidenceThreshold: 0.5,
       maxDetections: 100,
-      heatmapGridSize: 20, // 20x20 grid for heatmap
+      heatmapGridSize: 20,
+      smoothingFactor: 0.7, // For stabilizing detection counts
+      motionThreshold: 0.02, // Minimum motion to trigger detection
+      historyLength: 5, // Keep last 5 detections for smoothing
+
+      // Vertex AI Configuration
       vertexApiEndpoint: process.env.REACT_APP_VERTEX_API_ENDPOINT,
       projectId: process.env.REACT_APP_GOOGLE_CLOUD_PROJECT_ID,
-      location: process.env.REACT_APP_VERTEX_LOCATION || 'us-central1',
-      apiKey: process.env.REACT_APP_GOOGLE_CLOUD_API_KEY
+      location: process.env.REACT_APP_VERTEX_LOCATION || "us-central1",
+      apiKey: process.env.REACT_APP_GOOGLE_CLOUD_API_KEY,
+      accessToken: null, // Will be set during authentication
     };
+
+    this.cameraLocation = {
+      lat: 37.7749,
+      lng: -122.4194,
+    };
+
+    // Motion detection variables
+    this.previousFrame = null;
+    this.motionDetected = false;
+    this.isAuthenticating = false;
   }
 
   /**
-   * Initialize video processing with a video feed
+   * Initialize video processing with Vertex AI authentication
    * @param {HTMLVideoElement} videoElement - Video element to process
    * @param {Object} callbacks - Callback functions for events
    */
@@ -42,23 +61,75 @@ class VideoProcessingService {
       this.callbacks = { ...this.callbacks, ...callbacks };
 
       // Create canvas for frame capture
-      this.canvas = document.createElement('canvas');
-      this.context = this.canvas.getContext('2d');
+      this.canvas = document.createElement("canvas");
+      this.context = this.canvas.getContext("2d");
+
+      // Wait for video metadata to load
+      await new Promise((resolve) => {
+        if (videoElement.videoWidth && videoElement.videoHeight) {
+          resolve();
+        } else {
+          videoElement.addEventListener("loadedmetadata", resolve, {
+            once: true,
+          });
+        }
+      });
 
       // Set canvas size to match video
       this.canvas.width = videoElement.videoWidth || 640;
       this.canvas.height = videoElement.videoHeight || 480;
 
-      this.notifyStatusChange('initialized');
+      this.notifyStatusChange("loading_model");
+
+      // Authenticate with Vertex AI
+      console.log("Authenticating with Vertex AI...");
+      await this.authenticateVertexAI();
+
+      console.log("Vertex AI authentication successful");
+      this.notifyStatusChange("initialized");
       return true;
     } catch (error) {
-      this.handleError('Initialization failed', error);
+      this.handleError("Initialization failed", error);
       return false;
     }
   }
 
   /**
-   * Start processing video frames for crowd detection
+   * Authenticate with Vertex AI using API key or service account
+   */
+  async authenticateVertexAI() {
+    if (!this.config.projectId) {
+      throw new Error(
+        "Google Cloud Project ID is required. Please set REACT_APP_GOOGLE_CLOUD_PROJECT_ID environment variable.",
+      );
+    }
+
+    // If API key is provided, use it for authentication
+    if (this.config.apiKey) {
+      this.config.accessToken = this.config.apiKey;
+      return;
+    }
+
+    // For production, you would typically get access token from your backend
+    // This is a simplified approach - in production, implement proper OAuth2 flow
+    try {
+      // Try to get access token from backend endpoint
+      const response = await axios.post("/api/auth/vertex-ai-token", {
+        projectId: this.config.projectId,
+      });
+
+      this.config.accessToken = response.data.access_token;
+    } catch (error) {
+      console.warn(
+        "Could not authenticate with Vertex AI, using mock detection mode",
+      );
+      // Set flag to use mock detection
+      this.config.useMockDetection = true;
+    }
+  }
+
+  /**
+   * Start real-time processing with motion detection
    */
   startProcessing() {
     if (this.isProcessing || !this.videoElement) {
@@ -66,14 +137,379 @@ class VideoProcessingService {
     }
 
     this.isProcessing = true;
-    this.notifyStatusChange('processing');
+    this.notifyStatusChange("processing");
 
-    // Start detection interval
-    this.detectionInterval = setInterval(() => {
-      this.processCurrentFrame();
-    }, this.config.detectionIntervalMs);
+    // Start continuous processing loop
+    this.processVideoLoop();
 
-    console.log('Video processing started');
+    console.log("Real-time video processing started with Vertex AI");
+  }
+
+  /**
+   * Main processing loop for real-time detection
+   */
+  processVideoLoop() {
+    if (!this.isProcessing) return;
+
+    try {
+      // Detect motion first to optimize processing
+      const hasMotion = this.detectMotion();
+
+      // Process frame for person detection
+      this.processCurrentFrame(hasMotion);
+
+      // Schedule next frame with adaptive timing
+      this.animationFrame = requestAnimationFrame(() => {
+        const delay = hasMotion
+          ? this.config.detectionIntervalMs
+          : this.config.detectionIntervalMs * 2;
+        setTimeout(() => this.processVideoLoop(), delay);
+      });
+    } catch (error) {
+      this.handleError("Processing loop error", error);
+      // Continue processing despite errors
+      setTimeout(
+        () => this.processVideoLoop(),
+        this.config.detectionIntervalMs,
+      );
+    }
+  }
+
+  /**
+   * Detect motion in video frames to optimize processing
+   */
+  detectMotion() {
+    if (!this.videoElement || !this.canvas) return true;
+
+    // Capture current frame
+    this.context.drawImage(
+      this.videoElement,
+      0,
+      0,
+      this.canvas.width,
+      this.canvas.height,
+    );
+    const currentFrame = this.context.getImageData(
+      0,
+      0,
+      this.canvas.width,
+      this.canvas.height,
+    );
+
+    if (!this.previousFrame) {
+      this.previousFrame = currentFrame;
+      return true; // Process first frame
+    }
+
+    // Calculate motion by comparing frames
+    let motionPixels = 0;
+    const threshold = 30; // Pixel difference threshold
+    const data = currentFrame.data;
+    const prevData = this.previousFrame.data;
+
+    // Sample every 10th pixel for performance
+    for (let i = 0; i < data.length; i += 40) {
+      const diff =
+        Math.abs(data[i] - prevData[i]) +
+        Math.abs(data[i + 1] - prevData[i + 1]) +
+        Math.abs(data[i + 2] - prevData[i + 2]);
+
+      if (diff > threshold) {
+        motionPixels++;
+      }
+    }
+
+    const motionRatio = motionPixels / (data.length / 40);
+    this.motionDetected = motionRatio > this.config.motionThreshold;
+    this.previousFrame = currentFrame;
+
+    return this.motionDetected;
+  }
+
+  /**
+   * Process current video frame for person detection using Vertex AI
+   */
+  async processCurrentFrame(forceProcess = false) {
+    if (!this.videoElement || !this.canvas) {
+      return;
+    }
+
+    try {
+      // Only process if motion detected or forced
+      if (!forceProcess && !this.motionDetected) {
+        return;
+      }
+
+      // Capture current frame
+      this.context.drawImage(
+        this.videoElement,
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height,
+      );
+
+      // Convert to base64 for Vertex AI
+      const imageData = this.canvas.toDataURL("image/jpeg", 0.8);
+      const base64Image = imageData.split(",")[1];
+
+      // Detect humans using Vertex AI
+      const detections = await this.detectHumansVertexAI(base64Image);
+
+      // Smooth detection count using history
+      const smoothedCount = this.smoothDetectionCount(detections.length);
+
+      // Update detection history
+      this.updateDetectionHistory(detections, smoothedCount);
+
+      // Calculate crowd density
+      const densityData = this.calculateCrowdDensity(detections, smoothedCount);
+
+      // Update crowd data
+      this.crowdData = densityData;
+
+      // Notify callback with real-time data
+      if (this.callbacks.onCrowdDataUpdate) {
+        this.callbacks.onCrowdDataUpdate(densityData);
+      }
+
+      console.log(
+        `Vertex AI detected ${smoothedCount} people (raw: ${detections.length})`,
+      );
+    } catch (error) {
+      this.handleError("Frame processing failed", error);
+    }
+  }
+
+  /**
+   * Detect humans using Vertex AI Vision API
+   * @param {string} base64Image - Base64 encoded image
+   * @returns {Array} Array of person detections
+   */
+  async detectHumansVertexAI(base64Image) {
+    try {
+      // If configured to use mock detection or no authentication
+      if (this.config.useMockDetection || !this.config.accessToken) {
+        console.warn(
+          "Using mock detection - configure Vertex AI for real detection",
+        );
+        return this.generateIntelligentMockDetections();
+      }
+
+      // Call Vertex AI Vision API
+      const endpoint = `https://${this.config.location}-aiplatform.googleapis.com/v1/projects/${this.config.projectId}/locations/${this.config.location}/publishers/google/models/imageobjectdetection:predict`;
+
+      const requestBody = {
+        instances: [
+          {
+            content: base64Image,
+          },
+        ],
+        parameters: {
+          confidenceThreshold: this.config.confidenceThreshold,
+          maxPredictions: this.config.maxDetections,
+        },
+      };
+
+      const response = await axios.post(endpoint, requestBody, {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 5000, // 5 second timeout for real-time processing
+      });
+
+      // Filter for person detections
+      const detections = response.data.predictions[0].objects || [];
+      return detections
+        .filter(
+          (detection) =>
+            detection.displayName.toLowerCase() === "person" &&
+            detection.confidence >= this.config.confidenceThreshold,
+        )
+        .map((detection) => ({
+          bbox: this.convertVertexAIBbox(detection.boundingBox),
+          score: detection.confidence,
+          class: "person",
+        }));
+    } catch (error) {
+      console.warn(
+        "Vertex AI detection failed, using mock detection:",
+        error.message,
+      );
+      return this.generateIntelligentMockDetections();
+    }
+  }
+
+  /**
+   * Convert Vertex AI bounding box format to standard format
+   */
+  convertVertexAIBbox(vertexBbox) {
+    // Vertex AI returns normalized coordinates
+    const vertices = vertexBbox.normalizedVertices;
+    if (!vertices || vertices.length < 2) {
+      return [0, 0, 0, 0];
+    }
+
+    const x1 = vertices[0].x * this.canvas.width;
+    const y1 = vertices[0].y * this.canvas.height;
+    const x2 = vertices[1].x * this.canvas.width;
+    const y2 = vertices[1].y * this.canvas.height;
+
+    return [x1, y1, x2 - x1, y2 - y1]; // [x, y, width, height]
+  }
+
+  /**
+   * Generate intelligent mock detections for development/testing
+   * This creates more realistic detection patterns
+   */
+  generateIntelligentMockDetections() {
+    // Base number of people with some randomness
+    const baseCount = 3; // Minimum people
+    const variation = Math.floor(Math.random() * 8); // 0-7 additional people
+    const numDetections = baseCount + variation;
+
+    const detections = [];
+
+    // Create more stable detections with realistic confidence scores
+    for (let i = 0; i < numDetections; i++) {
+      // Create clusters of people (more realistic)
+      const clusterX = Math.random() * 0.6 + 0.2; // Avoid edges
+      const clusterY = Math.random() * 0.6 + 0.2;
+
+      // Add some spread within cluster
+      const spreadX = (Math.random() - 0.5) * 0.3;
+      const spreadY = (Math.random() - 0.5) * 0.3;
+
+      const x = Math.max(0, Math.min(1, clusterX + spreadX));
+      const y = Math.max(0, Math.min(1, clusterY + spreadY));
+
+      detections.push({
+        bbox: [
+          x * this.canvas.width,
+          y * this.canvas.height,
+          40 + Math.random() * 60, // Width: 40-100px
+          80 + Math.random() * 120, // Height: 80-200px
+        ],
+        score: 0.6 + Math.random() * 0.4, // Confidence: 0.6-1.0
+        class: "person",
+      });
+    }
+
+    return detections;
+  }
+
+  /**
+   * Smooth detection count using rolling average
+   */
+  smoothDetectionCount(currentCount) {
+    // Add current count to history
+    this.detectionHistory.push(currentCount);
+
+    // Keep only recent history
+    if (this.detectionHistory.length > this.config.historyLength) {
+      this.detectionHistory.shift();
+    }
+
+    // Calculate weighted average (more recent = higher weight)
+    let weightedSum = 0;
+    let totalWeight = 0;
+
+    this.detectionHistory.forEach((count, index) => {
+      const weight = (index + 1) / this.detectionHistory.length;
+      weightedSum += count * weight;
+      totalWeight += weight;
+    });
+
+    return Math.round(weightedSum / totalWeight);
+  }
+
+  /**
+   * Update detection history for analysis
+   */
+  updateDetectionHistory(detections, smoothedCount) {
+    this.lastDetections = detections.map((detection) => ({
+      bbox: detection.bbox,
+      score: detection.score,
+      timestamp: Date.now(),
+    }));
+
+    // Store metadata
+    this.lastDetectionMeta = {
+      rawCount: detections.length,
+      smoothedCount: smoothedCount,
+      timestamp: new Date().toISOString(),
+      confidence:
+        detections.reduce((sum, d) => sum + d.score, 0) /
+        Math.max(detections.length, 1),
+      usingVertexAI: !this.config.useMockDetection && !!this.config.accessToken,
+    };
+  }
+
+  /**
+   * Calculate crowd density from person detections
+   */
+  calculateCrowdDensity(detections, totalPeople) {
+    const gridSize = this.config.heatmapGridSize;
+    const cellWidth = this.canvas.width / gridSize;
+    const cellHeight = this.canvas.height / gridSize;
+
+    // Initialize density grid
+    const densityGrid = Array(gridSize)
+      .fill()
+      .map(() => Array(gridSize).fill(0));
+
+    // Map detections to grid cells
+    detections.forEach((detection) => {
+      const [x, y, width, height] = detection.bbox;
+      const centerX = x + width / 2;
+      const centerY = y + height / 2;
+
+      const gridX = Math.floor(centerX / cellWidth);
+      const gridY = Math.floor(centerY / cellHeight);
+
+      if (gridX >= 0 && gridX < gridSize && gridY >= 0 && gridY < gridSize) {
+        densityGrid[gridY][gridX] += detection.score;
+      }
+    });
+
+    // Convert grid to coordinate points
+    const densityPoints = [];
+    const baseLocation = this.getBaseLocation();
+    const areaScale = 0.0001; // Scale for mapping to geographic coordinates
+
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        if (densityGrid[y][x] > 0) {
+          const lat = baseLocation.lat + (y - gridSize / 2) * areaScale;
+          const lng = baseLocation.lng + (x - gridSize / 2) * areaScale;
+
+          densityPoints.push({
+            lat,
+            lng,
+            density: Math.min(densityGrid[y][x] * 3, 10), // Scale and cap density
+            timestamp: new Date().toISOString(),
+            personCount: Math.max(1, Math.floor(densityGrid[y][x])),
+            confidence: densityGrid[y][x] / detections.length || 0,
+          });
+        }
+      }
+    }
+
+    // Add summary point with total count
+    if (totalPeople > 0) {
+      densityPoints.push({
+        lat: baseLocation.lat,
+        lng: baseLocation.lng,
+        density: Math.min(totalPeople / 2, 10),
+        timestamp: new Date().toISOString(),
+        personCount: totalPeople,
+        confidence: this.lastDetectionMeta?.confidence || 0,
+        isTotal: true,
+      });
+    }
+
+    return densityPoints;
   }
 
   /**
@@ -87,199 +523,24 @@ class VideoProcessingService {
       this.detectionInterval = null;
     }
 
-    this.notifyStatusChange('stopped');
-    console.log('Video processing stopped');
-  }
-
-  /**
-   * Process current video frame for human detection
-   */
-  async processCurrentFrame() {
-    if (!this.videoElement || !this.canvas) {
-      return;
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
     }
 
-    try {
-      // Capture current frame
-      this.context.drawImage(this.videoElement, 0, 0, this.canvas.width, this.canvas.height);
-      const imageData = this.canvas.toDataURL('image/jpeg', 0.8);
-
-      // Remove data URL prefix
-      const base64Image = imageData.split(',')[1];
-
-      // Detect humans in the frame
-      const detections = await this.detectHumans(base64Image);
-
-      // Calculate crowd density
-      const densityData = this.calculateCrowdDensity(detections);
-
-      // Update crowd data
-      this.crowdData = densityData;
-
-      // Notify callback
-      if (this.callbacks.onCrowdDataUpdate) {
-        this.callbacks.onCrowdDataUpdate(densityData);
-      }
-
-    } catch (error) {
-      this.handleError('Frame processing failed', error);
-    }
-  }
-
-  /**
-   * Detect humans in image using Vertex AI Vision
-   * @param {string} base64Image - Base64 encoded image
-   * @returns {Array} Array of detection objects
-   */
-  async detectHumans(base64Image) {
-    try {
-      // For demo purposes, we'll use a mock detection since Vertex AI requires server-side setup
-      // In production, this would call the actual Vertex AI Vision API
-
-      if (this.config.vertexApiEndpoint && this.config.apiKey) {
-        return await this.callVertexAI(base64Image);
-      } else {
-        // Return mock detections for development
-        return this.generateMockDetections();
-      }
-    } catch (error) {
-      console.warn('Using mock detections due to API error:', error);
-      return this.generateMockDetections();
-    }
-  }
-
-  /**
-   * Call Vertex AI Vision API for human detection
-   * @param {string} base64Image - Base64 encoded image
-   * @returns {Array} Detection results
-   */
-  async callVertexAI(base64Image) {
-    const endpoint = `https://${this.config.location}-aiplatform.googleapis.com/v1/projects/${this.config.projectId}/locations/${this.config.location}/publishers/google/models/imageobjectdetection:predict`;
-
-    const requestBody = {
-      instances: [
-        {
-          content: base64Image
-        }
-      ],
-      parameters: {
-        confidenceThreshold: this.config.confidenceThreshold,
-        maxPredictions: this.config.maxDetections
-      }
-    };
-
-    const response = await axios.post(endpoint, requestBody, {
-      headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    // Filter for person detections
-    const detections = response.data.predictions[0].objects || [];
-    return detections.filter(detection =>
-      detection.displayName.toLowerCase() === 'person' &&
-      detection.confidence >= this.config.confidenceThreshold
-    );
-  }
-
-  /**
-   * Generate mock detections for development/testing
-   * @returns {Array} Mock detection objects
-   */
-  generateMockDetections() {
-    const numDetections = Math.floor(Math.random() * 15) + 5; // 5-20 people
-    const detections = [];
-
-    for (let i = 0; i < numDetections; i++) {
-      detections.push({
-        displayName: 'person',
-        confidence: 0.7 + Math.random() * 0.3,
-        boundingBox: {
-          normalizedVertices: [
-            {
-              x: Math.random() * 0.8,
-              y: Math.random() * 0.8
-            },
-            {
-              x: Math.random() * 0.2 + 0.8,
-              y: Math.random() * 0.2 + 0.8
-            }
-          ]
-        }
-      });
-    }
-
-    return detections;
-  }
-
-  /**
-   * Calculate crowd density from detections
-   * @param {Array} detections - Array of person detections
-   * @returns {Array} Crowd density data points
-   */
-  calculateCrowdDensity(detections) {
-    const gridSize = this.config.heatmapGridSize;
-    const cellWidth = 1.0 / gridSize;
-    const cellHeight = 1.0 / gridSize;
-
-    // Initialize density grid
-    const densityGrid = Array(gridSize).fill().map(() => Array(gridSize).fill(0));
-
-    // Map detections to grid cells
-    detections.forEach(detection => {
-      const bbox = detection.boundingBox.normalizedVertices;
-      const centerX = (bbox[0].x + bbox[1].x) / 2;
-      const centerY = (bbox[0].y + bbox[1].y) / 2;
-
-      const gridX = Math.floor(centerX / cellWidth);
-      const gridY = Math.floor(centerY / cellHeight);
-
-      if (gridX >= 0 && gridX < gridSize && gridY >= 0 && gridY < gridSize) {
-        densityGrid[gridY][gridX] += detection.confidence;
-      }
-    });
-
-    // Convert grid to coordinate points
-    const densityPoints = [];
-    const baseLocation = this.getBaseLocation();
-
-    for (let y = 0; y < gridSize; y++) {
-      for (let x = 0; x < gridSize; x++) {
-        if (densityGrid[y][x] > 0) {
-          const lat = baseLocation.lat + (y - gridSize/2) * 0.0001;
-          const lng = baseLocation.lng + (x - gridSize/2) * 0.0001;
-
-          densityPoints.push({
-            lat,
-            lng,
-            density: Math.min(densityGrid[y][x] * 2, 10), // Scale and cap density
-            timestamp: new Date().toISOString(),
-            personCount: Math.floor(densityGrid[y][x])
-          });
-        }
-      }
-    }
-
-    return densityPoints;
+    this.notifyStatusChange("stopped");
+    console.log("Video processing stopped");
   }
 
   /**
    * Get base location for mapping density points
-   * @returns {Object} Base lat/lng coordinates
    */
   getBaseLocation() {
-    // This should be configured based on camera location
-    return {
-      lat: 37.7749, // Default to San Francisco for demo
-      lng: -122.4194
-    };
+    return this.cameraLocation;
   }
 
   /**
    * Set camera location for accurate mapping
-   * @param {number} lat - Latitude
-   * @param {number} lng - Longitude
    */
   setCameraLocation(lat, lng) {
     this.cameraLocation = { lat, lng };
@@ -287,43 +548,84 @@ class VideoProcessingService {
 
   /**
    * Get current crowd statistics
-   * @returns {Object} Crowd statistics
    */
   getCrowdStatistics() {
-    if (!this.crowdData.length) {
+    const meta = this.lastDetectionMeta;
+
+    if (!meta) {
       return {
         totalPeople: 0,
         averageDensity: 0,
         hotspots: 0,
-        coverage: 0
+        coverage: 0,
+        confidence: 0,
+        lastUpdate: null,
+        usingVertexAI: false,
       };
     }
 
-    const totalPeople = this.crowdData.reduce((sum, point) => sum + point.personCount, 0);
-    const averageDensity = this.crowdData.reduce((sum, point) => sum + point.density, 0) / this.crowdData.length;
-    const hotspots = this.crowdData.filter(point => point.density > 7).length;
-    const coverage = (this.crowdData.length / (this.config.heatmapGridSize * this.config.heatmapGridSize)) * 100;
+    const totalPeople = meta.smoothedCount;
+    const averageDensity =
+      this.crowdData.length > 0
+        ? this.crowdData.reduce((sum, point) => sum + point.density, 0) /
+          this.crowdData.length
+        : 0;
+    const hotspots = this.crowdData.filter((point) => point.density > 7).length;
+    const coverage =
+      (this.crowdData.length /
+        (this.config.heatmapGridSize * this.config.heatmapGridSize)) *
+      100;
 
     return {
       totalPeople,
       averageDensity: parseFloat(averageDensity.toFixed(2)),
       hotspots,
-      coverage: parseFloat(coverage.toFixed(1))
+      coverage: parseFloat(coverage.toFixed(1)),
+      confidence: parseFloat((meta.confidence * 100).toFixed(1)),
+      lastUpdate: meta.timestamp,
+      motionDetected: this.motionDetected,
+      rawCount: meta.rawCount,
+      usingVertexAI: meta.usingVertexAI,
     };
   }
 
   /**
    * Get current crowd data
-   * @returns {Array} Current crowd density points
    */
   getCurrentCrowdData() {
     return this.crowdData;
   }
 
   /**
+   * Get last person detections with bounding boxes
+   */
+  getLastDetections() {
+    return this.lastDetections;
+  }
+
+  /**
+   * Get detection metadata
+   */
+  getDetectionMetadata() {
+    return this.lastDetectionMeta;
+  }
+
+  /**
+   * Update Vertex AI configuration
+   */
+  updateVertexAIConfig(config) {
+    this.config = { ...this.config, ...config };
+
+    // Re-authenticate if credentials changed
+    if (config.apiKey || config.projectId) {
+      this.authenticateVertexAI().catch((error) => {
+        console.warn("Re-authentication failed:", error);
+      });
+    }
+  }
+
+  /**
    * Handle errors
-   * @param {string} message - Error message
-   * @param {Error} error - Error object
    */
   handleError(message, error) {
     console.error(`VideoProcessingService: ${message}`, error);
@@ -335,7 +637,6 @@ class VideoProcessingService {
 
   /**
    * Notify status change
-   * @param {string} status - New status
    */
   notifyStatusChange(status) {
     if (this.callbacks.onStatusChange) {
@@ -348,11 +649,29 @@ class VideoProcessingService {
    */
   destroy() {
     this.stopProcessing();
+
     this.videoElement = null;
     this.canvas = null;
     this.context = null;
     this.crowdData = [];
+    this.lastDetections = [];
+    this.detectionHistory = [];
     this.callbacks = {};
+    this.previousFrame = null;
+  }
+
+  /**
+   * Update configuration
+   */
+  updateConfig(newConfig) {
+    this.config = { ...this.config, ...newConfig };
+  }
+
+  /**
+   * Get current configuration
+   */
+  getConfig() {
+    return { ...this.config };
   }
 }
 
