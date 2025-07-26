@@ -20,10 +20,24 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Initialize Google Auth
+// Initialize Google Auth with embedded credentials
+const serviceAccountCredentials = {
+  type: "service_account",
+  project_id: process.env.GOOGLE_CLOUD_PROJECT_ID,
+  private_key_id: process.env.GOOGLE_CLOUD_PRIVATE_KEY_ID,
+  private_key: process.env.GOOGLE_CLOUD_PRIVATE_KEY?.replace(/\\n/g, '\n'), // Handle escaped newlines
+  client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
+  client_id: process.env.GOOGLE_CLOUD_CLIENT_ID,
+  auth_uri: process.env.GOOGLE_CLOUD_AUTH_URI,
+  token_uri: process.env.GOOGLE_CLOUD_TOKEN_URI,
+  auth_provider_x509_cert_url: process.env.GOOGLE_CLOUD_AUTH_PROVIDER_X509_CERT_URL,
+  client_x509_cert_url: process.env.GOOGLE_CLOUD_CLIENT_X509_CERT_URL,
+  universe_domain: process.env.GOOGLE_CLOUD_UNIVERSE_DOMAIN
+};
+
 const auth = new GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS, // Path to service account key
+  credentials: serviceAccountCredentials, // Use embedded credentials
 });
 
 // Vertex AI authentication endpoint
@@ -183,9 +197,12 @@ app.get('/api/health', (req, res) => {
 // Environment configuration check
 app.get('/api/config/check', (req, res) => {
   const config = {
-    hasServiceAccount: !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    hasProjectId: !!process.env.REACT_APP_GOOGLE_CLOUD_PROJECT_ID,
-    nodeEnv: process.env.NODE_ENV || 'development'
+    hasServiceAccount: !!(process.env.GOOGLE_CLOUD_PROJECT_ID && process.env.GOOGLE_CLOUD_PRIVATE_KEY && process.env.GOOGLE_CLOUD_CLIENT_EMAIL),
+    hasProjectId: !!process.env.GOOGLE_CLOUD_PROJECT_ID,
+    projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+    clientEmail: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
+    nodeEnv: process.env.NODE_ENV || 'development',
+    authMethod: 'embedded_credentials'
   };
 
   res.json(config);
@@ -206,12 +223,14 @@ app.listen(PORT, () => {
   console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
 
   // Check configuration on startup
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    console.warn('⚠️  GOOGLE_APPLICATION_CREDENTIALS not set - Vertex AI authentication may fail');
+  if (!process.env.GOOGLE_CLOUD_PROJECT_ID || !process.env.GOOGLE_CLOUD_PRIVATE_KEY || !process.env.GOOGLE_CLOUD_CLIENT_EMAIL) {
+    console.warn('⚠️  Google Cloud service account credentials incomplete - authentication may fail');
+  } else {
+    console.log('✅ Google Cloud service account credentials loaded from environment');
   }
 
-  if (!process.env.REACT_APP_GOOGLE_CLOUD_PROJECT_ID) {
-    console.warn('⚠️  REACT_APP_GOOGLE_CLOUD_PROJECT_ID not set');
+  if (!process.env.GOOGLE_CLOUD_PROJECT_ID) {
+    console.warn('⚠️  GOOGLE_CLOUD_PROJECT_ID not set');
   }
 });
 
