@@ -1,0 +1,44 @@
+{
+  "name": "drishti-functions",
+  "version": "1.0.0",
+  "description": "Firebase Functions for Drishti AI crowd detection with Vertex AI integration",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "start": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "build": "npm install",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "test": "jest",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "firebase",
+    "functions",
+    "vertex-ai",
+    "crowd-detection",
+    "google-cloud",
+    "express",
+    "computer-vision"
+  ],
+  "author": "Drishti Team",
+  "license": "MIT",
+  "dependencies": {
+    "firebase-functions": "^4.8.1",
+    "firebase-admin": "^12.0.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "google-auth-library": "^9.6.3",
+    "axios": "^1.6.0",
+    "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "firebase-functions-test": "^3.1.0"
+  },
+  "private": true
+}

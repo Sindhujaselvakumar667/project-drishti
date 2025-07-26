@@ -31,11 +31,14 @@ class VideoProcessingService {
       motionThreshold: 0.02, // Minimum motion to trigger detection
       historyLength: 5, // Keep last 5 detections for smoothing
 
-      // Backend API Configuration (using proxy for authentication)
-      backendUrl: process.env.REACT_APP_BACKEND_URL || "http://localhost:5000",
+      // Backend API Configuration - now using Firebase Functions
+      backendUrl:
+        process.env.NODE_ENV === "production"
+          ? "/api" // Firebase Functions URL via hosting rewrites
+          : "http://localhost:5001/zero2agent-ffe2e/us-central1/api", // Local emulator
       projectId: process.env.REACT_APP_GOOGLE_CLOUD_PROJECT_ID,
       location: process.env.REACT_APP_VERTEX_LOCATION || "us-central1",
-      useBackendProxy: true, // Use backend for authentication
+      useBackendProxy: true,
     };
 
     this.cameraLocation = {
@@ -112,18 +115,22 @@ class VideoProcessingService {
     // Get OAuth token from backend
     try {
       console.log("Requesting OAuth token from backend...");
-      const response = await axios.post(`${this.config.backendUrl}/api/auth/vertex-ai-token`, {
-        projectId: this.config.projectId,
-      }, {
-        timeout: 10000, // 10 second timeout for authentication
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await axios.post(
+        `${this.config.backendUrl}/auth/vertex-ai-token`,
+        {
+          projectId: this.config.projectId,
+        },
+        {
+          timeout: 10000, // 10 second timeout for authentication
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
 
       if (response.data.access_token) {
         this.config.accessToken = response.data.access_token;
-        this.config.tokenExpiry = Date.now() + (response.data.expires_in * 1000);
+        this.config.tokenExpiry = Date.now() + response.data.expires_in * 1000;
         this.config.authenticated = true;
         console.log("✅ Backend OAuth authentication successful");
         console.log(`🔑 Token expires in ${response.data.expires_in} seconds`);
@@ -151,7 +158,10 @@ class VideoProcessingService {
 
     // Check if token is expiring soon (refresh 5 minutes before expiry)
     const fiveMinutes = 5 * 60 * 1000;
-    if (this.config.tokenExpiry && (Date.now() + fiveMinutes) >= this.config.tokenExpiry) {
+    if (
+      this.config.tokenExpiry &&
+      Date.now() + fiveMinutes >= this.config.tokenExpiry
+    ) {
       console.log("🔄 OAuth token expiring soon, refreshing...");
       await this.authenticateVertexAI();
     }
@@ -288,7 +298,10 @@ class VideoProcessingService {
       const hasValidToken = await this.ensureValidToken();
 
       // Detect humans using Vertex AI
-      const detections = await this.detectHumansVertexAI(base64Image, hasValidToken);
+      const detections = await this.detectHumansVertexAI(
+        base64Image,
+        hasValidToken,
+      );
 
       // Smooth detection count using history
       const smoothedCount = this.smoothDetectionCount(detections.length);
@@ -324,11 +337,17 @@ class VideoProcessingService {
   async detectHumansVertexAI(base64Image, hasValidToken = false) {
     try {
       // If configured to use mock detection or no authentication
-      if (this.config.useMockDetection || !hasValidToken || !this.config.authenticated) {
+      if (
+        this.config.useMockDetection ||
+        !hasValidToken ||
+        !this.config.authenticated
+      ) {
         if (!hasValidToken) {
           console.warn("⚠️ No valid OAuth token - using mock detection");
         } else {
-          console.warn("⚠️ Using mock detection - configure backend authentication for real detection");
+          console.warn(
+            "⚠️ Using mock detection - configure backend authentication for real detection",
+          );
         }
         return this.generateIntelligentMockDetections();
       }
@@ -336,23 +355,29 @@ class VideoProcessingService {
       console.log("🤖 Making Vertex AI detection request with OAuth token...");
 
       // Call backend proxy endpoint for Vertex AI with OAuth
-      const response = await axios.post(`${this.config.backendUrl}/api/vertex-ai/detect`, {
-        base64Image: base64Image,
-        projectId: this.config.projectId,
-        location: this.config.location,
-      }, {
-        timeout: 8000, // 8 second timeout for real-time processing
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.config.accessToken}`, // Include OAuth token
+      const response = await axios.post(
+        `${this.config.backendUrl}/vertex-ai/detect`,
+        {
+          base64Image: base64Image,
+          projectId: this.config.projectId,
+          location: this.config.location,
         },
-      });
+        {
+          timeout: 8000, // 8 second timeout for real-time processing
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.config.accessToken}`, // Include OAuth token
+          },
+        },
+      );
 
       // Backend already filters for person detections
       const detections = response.data.detections || [];
       const personCount = detections.length;
 
-      console.log(`✅ Vertex AI detected ${personCount} people with OAuth authentication`);
+      console.log(
+        `✅ Vertex AI detected ${personCount} people with OAuth authentication`,
+      );
 
       return detections.map((detection) => ({
         bbox: this.convertVertexAIBbox(detection.boundingBox),
@@ -712,8 +737,8 @@ class VideoProcessingService {
    * Resize canvas image for API to reduce payload size
    */
   resizeCanvasForAPI(sourceCanvas, maxWidth = 640, maxHeight = 480) {
-    const tempCanvas = document.createElement('canvas');
-    const tempContext = tempCanvas.getContext('2d');
+    const tempCanvas = document.createElement("canvas");
+    const tempContext = tempCanvas.getContext("2d");
 
     // Calculate aspect ratio
     const aspectRatio = sourceCanvas.width / sourceCanvas.height;
