@@ -11,12 +11,16 @@ class VertexAIForecastingService {
     this.predictionCache = new Map();
     this.lastPredictionTime = null;
     this.predictionHistory = [];
+    console.log('Vertex AI Forecasting Service created',process.env.REACT_APP_GOOGLE_CLOUD_API_KEY);
 
     // Configuration
     this.config = {
       projectId: process.env.REACT_APP_GOOGLE_CLOUD_PROJECT_ID,
       location: process.env.REACT_APP_VERTEX_LOCATION || 'us-central1',
-      apiKey: process.env.REACT_APP_GOOGLE_CLOUD_API_KEY,
+      backendUrl: process.env.REACT_APP_BACKEND_URL || "http://localhost:5001",
+      accessToken: null,
+      tokenExpiry: null,
+      authenticated: false,
       modelDisplayName: 'crowd-surge-forecasting-model',
       datasetDisplayName: 'crowd-movement-dataset',
 
@@ -53,14 +57,86 @@ class VertexAIForecastingService {
   }
 
   /**
+   * Authenticate with backend OAuth service
+   */
+  async authenticate() {
+    try {
+      console.log("🔐 Authenticating Vertex AI Forecasting with backend...");
+
+      const response = await axios.post(`${this.config.backendUrl}/api/auth/vertex-ai-token`, {
+        projectId: this.config.projectId,
+      }, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data.access_token) {
+        this.config.accessToken = response.data.access_token;
+        this.config.tokenExpiry = Date.now() + (response.data.expires_in * 1000);
+        this.config.authenticated = true;
+        console.log("✅ Vertex AI Forecasting authentication successful");
+        return true;
+      } else {
+        throw new Error("No access token received from backend");
+      }
+    } catch (error) {
+      console.warn("❌ Vertex AI Forecasting authentication failed:", error.message);
+      this.config.authenticated = false;
+      return false;
+    }
+  }
+
+  /**
+   * Ensure we have a valid OAuth token
+   */
+  async ensureValidToken() {
+    if (!this.config.authenticated || !this.config.accessToken) {
+      return await this.authenticate();
+    }
+
+    // Check if token is expiring soon (refresh 5 minutes before expiry)
+    const fiveMinutes = 5 * 60 * 1000;
+    if (this.config.tokenExpiry && (Date.now() + fiveMinutes) >= this.config.tokenExpiry) {
+      console.log("🔄 Vertex AI Forecasting token expiring soon, refreshing...");
+      return await this.authenticate();
+    }
+
+    return true;
+  }
+
+  /**
    * Initialize the forecasting service
    */
   async initialize(callbacks = {}) {
     try {
       this.callbacks = { ...this.callbacks, ...callbacks };
 
+      if (!this.config.projectId) {
+        throw new Error('Google Cloud Project ID is required');
+      }
+
+      console.log('Initializing Vertex AI Forecasting Service...');
+
+      // First authenticate with backend
+      const authenticated = await this.authenticate();
+      if (!authenticated) {
+        console.warn('⚠️ Authentication failed, forecasting service will use mock predictions');
+        this.isInitialized = true; // Still initialize for mock predictions
+        if (this.callbacks.onModelStatusChange) {
+          this.callbacks.onModelStatusChange('mock_mode');
+        }
+        return true;
+      }
+
       // Check if model exists, if not create it
-      await this.ensureModelExists();
+      try {
+        await this.ensureModelExists();
+      } catch (error) {
+        console.warn('⚠️ Model operations failed, using mock predictions:', error.message);
+        this.simulateModelCreation();
+      }
 
       this.isInitialized = true;
 
@@ -110,19 +186,36 @@ class VertexAIForecastingService {
    * List existing AutoML forecasting models
    */
   async listModels() {
+    // Ensure we have a valid token
+    const hasValidToken = await this.ensureValidToken();
+    if (!hasValidToken) {
+      console.warn('⚠️ No valid OAuth token for listing models');
+      return [];
+    }
+
     const url = `https://${this.config.location}-aiplatform.googleapis.com/v1/projects/${this.config.projectId}/locations/${this.config.location}/models`;
+    console.log('🔍 Listing models...', url);
 
     try {
       const response = await axios.get(url, {
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${this.config.accessToken}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000
       });
 
       return response.data.models || [];
     } catch (error) {
-      console.error('Error listing models:', error);
+      console.error('❌ Error listing models:', error.response?.data || error.message);
+
+      // Handle authentication errors
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.warn('🔑 Authentication failed, refreshing token...');
+        this.config.authenticated = false;
+        await this.authenticate();
+      }
+
       return [];
     }
   }
@@ -173,7 +266,7 @@ class VertexAIForecastingService {
     try {
       const response = await axios.post(url, datasetConfig, {
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${this.config.accessToken}`,
           'Content-Type': 'application/json'
         }
       });
@@ -221,7 +314,7 @@ class VertexAIForecastingService {
     try {
       const response = await axios.post(url, pipelineConfig, {
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${this.config.accessToken}`,
           'Content-Type': 'application/json'
         }
       });
@@ -294,7 +387,7 @@ class VertexAIForecastingService {
 
         const response = await axios.get(url, {
           headers: {
-            'Authorization': `Bearer ${this.config.apiKey}`,
+            'Authorization': `Bearer ${this.config.accessToken}`,
             'Content-Type': 'application/json'
           }
         });
@@ -361,7 +454,7 @@ class VertexAIForecastingService {
     try {
       const response = await axios.post(url, deploymentConfig, {
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${this.config.accessToken}`,
           'Content-Type': 'application/json'
         }
       });
@@ -549,20 +642,35 @@ class VertexAIForecastingService {
       throw new Error('Model endpoint not available');
     }
 
+    // Ensure we have a valid token
+    const hasValidToken = await this.ensureValidToken();
+    if (!hasValidToken) {
+      throw new Error('No valid OAuth token for prediction request');
+    }
+
     const url = `https://${this.config.location}-aiplatform.googleapis.com/v1/${this.modelEndpoint}:predict`;
 
     try {
       const response = await axios.post(url, inputData, {
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${this.config.accessToken}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 15000
       });
 
       return response.data;
 
     } catch (error) {
-      console.error('Error making prediction request:', error);
+      console.error('❌ Error making prediction request:', error.response?.data || error.message);
+
+      // Handle authentication errors
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.warn('🔑 Authentication failed during prediction, refreshing token...');
+        this.config.authenticated = false;
+        await this.authenticate();
+      }
+
       throw error;
     }
   }

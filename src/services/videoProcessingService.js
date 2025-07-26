@@ -31,12 +31,11 @@ class VideoProcessingService {
       motionThreshold: 0.02, // Minimum motion to trigger detection
       historyLength: 5, // Keep last 5 detections for smoothing
 
-      // Vertex AI Configuration
-      vertexApiEndpoint: process.env.REACT_APP_VERTEX_API_ENDPOINT,
+      // Backend API Configuration (using proxy for authentication)
+      backendUrl: process.env.REACT_APP_BACKEND_URL || "http://localhost:5000",
       projectId: process.env.REACT_APP_GOOGLE_CLOUD_PROJECT_ID,
       location: process.env.REACT_APP_VERTEX_LOCATION || "us-central1",
-      apiKey: process.env.REACT_APP_GOOGLE_CLOUD_API_KEY,
-      accessToken: null, // Will be set during authentication
+      useBackendProxy: true, // Use backend for authentication
     };
 
     this.cameraLocation = {
@@ -95,7 +94,7 @@ class VideoProcessingService {
   }
 
   /**
-   * Authenticate with Vertex AI using API key or service account
+   * Authenticate with Vertex AI using backend OAuth token
    */
   async authenticateVertexAI() {
     if (!this.config.projectId) {
@@ -104,28 +103,60 @@ class VideoProcessingService {
       );
     }
 
-    // If API key is provided, use it for authentication
-    if (this.config.apiKey) {
-      this.config.accessToken = this.config.apiKey;
+    if (!this.config.useBackendProxy) {
+      console.warn("Backend proxy not configured, using mock detection mode");
+      this.config.useMockDetection = true;
       return;
     }
 
-    // For production, you would typically get access token from your backend
-    // This is a simplified approach - in production, implement proper OAuth2 flow
+    // Get OAuth token from backend
     try {
-      // Try to get access token from backend endpoint
-      const response = await axios.post("/api/auth/vertex-ai-token", {
+      console.log("Requesting OAuth token from backend...");
+      const response = await axios.post(`${this.config.backendUrl}/api/auth/vertex-ai-token`, {
         projectId: this.config.projectId,
+      }, {
+        timeout: 10000, // 10 second timeout for authentication
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
-      this.config.accessToken = response.data.access_token;
+      if (response.data.access_token) {
+        this.config.accessToken = response.data.access_token;
+        this.config.tokenExpiry = Date.now() + (response.data.expires_in * 1000);
+        this.config.authenticated = true;
+        console.log("✅ Backend OAuth authentication successful");
+        console.log(`🔑 Token expires in ${response.data.expires_in} seconds`);
+      } else {
+        throw new Error("No access token received from backend");
+      }
     } catch (error) {
       console.warn(
-        "Could not authenticate with Vertex AI, using mock detection mode",
+        "❌ Could not authenticate with backend, using mock detection mode:",
+        error.response?.data?.error || error.message,
       );
       // Set flag to use mock detection
       this.config.useMockDetection = true;
+      this.config.authenticated = false;
     }
+  }
+
+  /**
+   * Check if OAuth token is still valid and refresh if needed
+   */
+  async ensureValidToken() {
+    if (!this.config.authenticated || !this.config.accessToken) {
+      return false;
+    }
+
+    // Check if token is expiring soon (refresh 5 minutes before expiry)
+    const fiveMinutes = 5 * 60 * 1000;
+    if (this.config.tokenExpiry && (Date.now() + fiveMinutes) >= this.config.tokenExpiry) {
+      console.log("🔄 OAuth token expiring soon, refreshing...");
+      await this.authenticateVertexAI();
+    }
+
+    return this.config.authenticated;
   }
 
   /**
@@ -253,8 +284,11 @@ class VideoProcessingService {
       const imageData = this.canvas.toDataURL("image/jpeg", 0.8);
       const base64Image = imageData.split(",")[1];
 
+      // Ensure we have a valid OAuth token
+      const hasValidToken = await this.ensureValidToken();
+
       // Detect humans using Vertex AI
-      const detections = await this.detectHumansVertexAI(base64Image);
+      const detections = await this.detectHumansVertexAI(base64Image, hasValidToken);
 
       // Smooth detection count using history
       const smoothedCount = this.smoothDetectionCount(detections.length);
@@ -282,60 +316,60 @@ class VideoProcessingService {
   }
 
   /**
-   * Detect humans using Vertex AI Vision API
+   * Detect humans using Vertex AI Vision API via backend proxy with OAuth
    * @param {string} base64Image - Base64 encoded image
+   * @param {boolean} hasValidToken - Whether we have a valid OAuth token
    * @returns {Array} Array of person detections
    */
-  async detectHumansVertexAI(base64Image) {
+  async detectHumansVertexAI(base64Image, hasValidToken = false) {
     try {
       // If configured to use mock detection or no authentication
-      if (this.config.useMockDetection || !this.config.accessToken) {
-        console.warn(
-          "Using mock detection - configure Vertex AI for real detection",
-        );
+      if (this.config.useMockDetection || !hasValidToken || !this.config.authenticated) {
+        if (!hasValidToken) {
+          console.warn("⚠️ No valid OAuth token - using mock detection");
+        } else {
+          console.warn("⚠️ Using mock detection - configure backend authentication for real detection");
+        }
         return this.generateIntelligentMockDetections();
       }
 
-      // Call Vertex AI Vision API
-      const endpoint = `https://${this.config.location}-aiplatform.googleapis.com/v1/projects/${this.config.projectId}/locations/${this.config.location}/publishers/google/models/imageobjectdetection:predict`;
+      console.log("🤖 Making Vertex AI detection request with OAuth token...");
 
-      const requestBody = {
-        instances: [
-          {
-            content: base64Image,
-          },
-        ],
-        parameters: {
-          confidenceThreshold: this.config.confidenceThreshold,
-          maxPredictions: this.config.maxDetections,
-        },
-      };
-
-      const response = await axios.post(endpoint, requestBody, {
+      // Call backend proxy endpoint for Vertex AI with OAuth
+      const response = await axios.post(`${this.config.backendUrl}/api/vertex-ai/detect`, {
+        base64Image: base64Image,
+        projectId: this.config.projectId,
+        location: this.config.location,
+      }, {
+        timeout: 8000, // 8 second timeout for real-time processing
         headers: {
-          Authorization: `Bearer ${this.config.accessToken}`,
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.config.accessToken}`, // Include OAuth token
         },
-        timeout: 5000, // 5 second timeout for real-time processing
       });
 
-      // Filter for person detections
-      const detections = response.data.predictions[0].objects || [];
-      return detections
-        .filter(
-          (detection) =>
-            detection.displayName.toLowerCase() === "person" &&
-            detection.confidence >= this.config.confidenceThreshold,
-        )
-        .map((detection) => ({
-          bbox: this.convertVertexAIBbox(detection.boundingBox),
-          score: detection.confidence,
-          class: "person",
-        }));
+      // Backend already filters for person detections
+      const detections = response.data.detections || [];
+      const personCount = detections.length;
+
+      console.log(`✅ Vertex AI detected ${personCount} people with OAuth authentication`);
+
+      return detections.map((detection) => ({
+        bbox: this.convertVertexAIBbox(detection.boundingBox),
+        score: detection.confidence,
+        class: "person",
+      }));
     } catch (error) {
+      // Handle authentication errors specifically
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.warn("🔑 Authentication failed, refreshing token...");
+        this.config.authenticated = false;
+        await this.authenticateVertexAI();
+      }
+
       console.warn(
-        "Vertex AI detection failed, using mock detection:",
-        error.message,
+        "❌ Backend Vertex AI detection failed, using mock detection:",
+        error.response?.data?.error || error.message,
       );
       return this.generateIntelligentMockDetections();
     }

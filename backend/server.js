@@ -11,6 +11,15 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    service: 'drishti-backend'
+  });
+});
+
 // Initialize Google Auth
 const auth = new GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/cloud-platform'],
@@ -54,7 +63,7 @@ app.post('/api/auth/vertex-ai-token', async (req, res) => {
   }
 });
 
-// Vertex AI Vision API proxy endpoint for additional security
+// Vertex AI Vision API proxy endpoint with OAuth authentication
 app.post('/api/vertex-ai/detect', async (req, res) => {
   try {
     const { base64Image, projectId, location = 'us-central1' } = req.body;
@@ -65,25 +74,33 @@ app.post('/api/vertex-ai/detect', async (req, res) => {
       });
     }
 
-    // Get authenticated client
+    console.log(`🤖 Processing Vertex AI detection request for project: ${projectId}`);
+
+    // Get authenticated client with service account
     const authClient = await auth.getClient();
 
-    // Vertex AI endpoint
-    const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/imageobjectdetection:predict`;
+    // Google Cloud Vision API endpoint for object localization
+    const endpoint = `https://vision.googleapis.com/v1/images:annotate`;
 
     const requestBody = {
-      instances: [
+      requests: [
         {
-          content: base64Image
+          image: {
+            content: base64Image
+          },
+          features: [
+            {
+              type: 'OBJECT_LOCALIZATION',
+              maxResults: 100
+            }
+          ]
         }
-      ],
-      parameters: {
-        confidenceThreshold: 0.5,
-        maxPredictions: 100
-      }
+      ]
     };
 
-    // Make request to Vertex AI
+    console.log(`📡 Making request to Vision API endpoint: ${endpoint}`);
+
+    // Make request to Vision API with service account authentication
     const response = await authClient.request({
       url: endpoint,
       method: 'POST',
@@ -93,29 +110,63 @@ app.post('/api/vertex-ai/detect', async (req, res) => {
       }
     });
 
-    // Filter for person detections
-    const detections = response.data.predictions[0].objects || [];
+    // Filter for person detections from Vision API response
+    const detections = response.data.responses?.[0]?.localizedObjectAnnotations || [];
     const personDetections = detections.filter(detection =>
-      detection.displayName.toLowerCase() === 'person' &&
-      detection.confidence >= 0.5
+      detection.name.toLowerCase() === 'person' &&
+      detection.score >= 0.5
     );
 
-    console.log(`Detected ${personDetections.length} people via Vertex AI`);
+    console.log(`✅ Detected ${personDetections.length} people via Vision API`);
+
+    // Convert Vision API format to our expected format
+    const formattedDetections = personDetections.map(detection => ({
+      displayName: detection.name,
+      confidence: detection.score,
+      boundingBox: {
+        normalizedVertices: [
+          { x: detection.boundingPoly.normalizedVertices[0].x, y: detection.boundingPoly.normalizedVertices[0].y },
+          { x: detection.boundingPoly.normalizedVertices[2].x, y: detection.boundingPoly.normalizedVertices[2].y }
+        ]
+      }
+    }));
 
     res.json({
-      detections: personDetections,
+      detections: formattedDetections,
       total_people: personDetections.length,
       confidence_avg: personDetections.length > 0
-        ? personDetections.reduce((sum, d) => sum + d.confidence, 0) / personDetections.length
+        ? personDetections.reduce((sum, d) => sum + d.score, 0) / personDetections.length
         : 0,
-      processing_time: Date.now()
+      processing_time: Date.now(),
+      status: 'success'
     });
 
   } catch (error) {
-    console.error('Vertex AI detection error:', error);
+    console.error('❌ Vertex AI detection error:', error.message);
+
+    // Handle specific authentication errors
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      return res.status(401).json({
+        error: 'Authentication failed with Vertex AI',
+        details: error.response?.data || error.message,
+        status: 'auth_error'
+      });
+    }
+
+    // Handle API errors
+    if (error.response?.status >= 400) {
+      return res.status(error.response.status).json({
+        error: 'Vertex AI API error',
+        details: error.response?.data || error.message,
+        status: 'api_error'
+      });
+    }
+
+    // Handle other errors
     res.status(500).json({
-      error: 'Failed to process image with Vertex AI',
-      details: error.message
+      error: 'Internal server error during detection',
+      details: error.message,
+      status: 'server_error'
     });
   }
 });
