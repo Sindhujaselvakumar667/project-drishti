@@ -1,0 +1,725 @@
+/* Emergency Responder PWA Styles */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family:
+        "Inter",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "Roboto",
+        "Oxygen",
+        "Ubuntu",
+        "Cantarell",
+        "Fira Sans",
+        "Droid Sans",
+        "Helvetica Neue",
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #f8fafc;
+    color: #1e293b;
+    line-height: 1.6;
+}
+
+.App {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header Styles */
+.app-header {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    padding: 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.responder-info h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.responder-details {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.responder-details p {
+    margin: 0.2rem 0;
+}
+
+.responder-name {
+    font-weight: 600;
+}
+
+.responder-badge {
+    color: #fef08a;
+}
+
+.responder-location {
+    color: #cbd5e1;
+}
+
+.status-indicators {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.status,
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px);
+}
+
+.status-dot,
+.connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+.status.available .status-dot {
+    background-color: #22c55e;
+}
+
+.status.busy .status-dot {
+    background-color: #f59e0b;
+}
+
+.status.offline .status-dot {
+    background-color: #ef4444;
+}
+
+.connection-status.online .connection-dot {
+    background-color: #22c55e;
+}
+
+.connection-status.offline .connection-dot {
+    background-color: #ef4444;
+}
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Main Content */
+.app-main {
+    flex: 1;
+    padding: 2rem 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.dashboard {
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: 1fr;
+}
+
+.welcome-section {
+    text-align: center;
+    padding: 2rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.welcome-section h2 {
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+    font-size: 1.875rem;
+    font-weight: 700;
+}
+
+.welcome-section p {
+    color: #64748b;
+    font-size: 1.125rem;
+}
+
+/* Emergency Alert Overlay */
+.emergency-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 1rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.emergency-alert {
+    background: white;
+    border-radius: 16px;
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    animation: alertPulse 1s ease-in-out infinite alternate;
+    border: 3px solid #dc2626;
+}
+
+.emergency-header {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 16px 16px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    position: relative;
+}
+
+.emergency-icon {
+    font-size: 2rem;
+    animation: shake 0.5s ease-in-out infinite;
+}
+
+.emergency-header h2 {
+    flex: 1;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.emergency-content {
+    padding: 1.5rem;
+}
+
+.emergency-message {
+    font-size: 1.125rem;
+    margin-bottom: 1.5rem;
+    color: #1e293b;
+    font-weight: 500;
+}
+
+.emergency-details {
+    background: #f8fafc;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.emergency-details p {
+    margin: 0.5rem 0;
+    font-size: 0.875rem;
+}
+
+.priority {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+
+.priority.high {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.priority.medium {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.priority.low {
+    background: #ecfdf5;
+    color: #059669;
+}
+
+.emergency-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.respond-btn,
+.acknowledge-btn {
+    flex: 1;
+    padding: 0.875rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 140px;
+}
+
+.respond-btn {
+    background: #dc2626;
+    color: white;
+    animation: buttonPulse 2s ease-in-out infinite;
+}
+
+.respond-btn:hover {
+    background: #b91c1c;
+    transform: translateY(-1px);
+}
+
+.acknowledge-btn {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.acknowledge-btn:hover {
+    background: #d1d5db;
+    transform: translateY(-1px);
+}
+
+/* Notification Status */
+.notification-status,
+.quick-actions,
+.app-info {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.notification-status h3,
+.quick-actions h3,
+.app-info h3 {
+    color: #1e293b;
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.notification-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: #f8fafc;
+    border-radius: 8px;
+}
+
+.status-icon {
+    font-size: 1.25rem;
+}
+
+.status-ok {
+    color: #22c55e;
+    font-weight: 600;
+    margin-left: auto;
+}
+
+.status-error {
+    color: #ef4444;
+    font-weight: 600;
+    margin-left: auto;
+}
+
+/* Quick Actions */
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    padding: 0.875rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+    min-width: 140px;
+}
+
+.test-btn {
+    background: #f59e0b;
+    color: white;
+}
+
+.test-btn:hover {
+    background: #d97706;
+    transform: translateY(-1px);
+}
+
+.install-btn {
+    background: #3b82f6;
+    color: white;
+}
+
+.install-btn:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+}
+
+/* App Info */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.info-item {
+    padding: 0.75rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 0.875rem;
+}
+
+.pwa-status,
+.sw-status {
+    color: #22c55e;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+
+/* Footer */
+.app-footer {
+    background: #1e293b;
+    color: #94a3b8;
+    text-align: center;
+    padding: 1.5rem;
+    font-size: 0.875rem;
+}
+
+.app-footer p {
+    margin: 0.25rem 0;
+}
+
+/* Animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes alertPulse {
+    from {
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    to {
+        box-shadow: 0 25px 50px -12px rgba(220, 38, 38, 0.3);
+    }
+}
+
+@keyframes shake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(-5px);
+    }
+    75% {
+        transform: translateX(5px);
+    }
+}
+
+@keyframes buttonPulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .header-content {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .status-indicators {
+        align-items: center;
+        flex-direction: row;
+        justify-content: center;
+    }
+
+    .app-main {
+        padding: 1rem;
+    }
+
+    .emergency-actions {
+        flex-direction: column;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+
+    .emergency-overlay {
+        padding: 0.5rem;
+    }
+
+    .emergency-alert {
+        margin: 0.5rem;
+    }
+
+    .emergency-header {
+        padding: 1rem;
+    }
+
+    .emergency-content {
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .responder-info h1 {
+        font-size: 1.25rem;
+    }
+
+    .welcome-section h2 {
+        font-size: 1.5rem;
+    }
+
+    .welcome-section {
+        padding: 1.5rem;
+    }
+
+    .emergency-header h2 {
+        font-size: 1.25rem;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #0f172a;
+        color: #e2e8f0;
+    }
+
+    .welcome-section,
+    .notification-status,
+    .quick-actions,
+    .app-info {
+        background: #1e293b;
+        color: #e2e8f0;
+    }
+
+    .welcome-section h2,
+    .notification-status h3,
+    .quick-actions h3,
+    .app-info h3 {
+        color: #f1f5f9;
+    }
+
+    .status-item,
+    .emergency-details,
+    .info-item {
+        background: #334155;
+    }
+
+    .emergency-alert {
+        background: #1e293b;
+        color: #e2e8f0;
+    }
+
+    .emergency-content {
+        background: #1e293b;
+    }
+}
+
+/* Loading Container */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    text-align: center;
+    padding: 2rem;
+}
+
+.loading-container .loading-spinner {
+    width: 3rem;
+    height: 3rem;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 2rem;
+}
+
+.loading-container p {
+    font-size: 1.125rem;
+    font-weight: 500;
+    margin: 0;
+    opacity: 0.9;
+}
+
+/* Logout Button */
+.logout-button {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.logout-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.logout-button:active {
+    transform: translateY(0);
+}
+
+/* Session Info */
+.session-info {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.session-text {
+    color: #64748b;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.session-text strong {
+    color: #1e293b;
+}
+
+/* Enhanced Status Indicators */
+.status-indicators {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+@media (max-width: 768px) {
+    .status-indicators {
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .logout-button {
+        margin-left: 0.5rem;
+    }
+}
+
+/* Authentication States */
+.auth-loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.auth-error {
+    color: #ef4444;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    font-size: 0.875rem;
+}
+
+/* Print styles */
+@media print {
+    .emergency-overlay,
+    .quick-actions,
+    .app-footer,
+    .logout-button {
+        display: none;
+    }
+
+    .app-header {
+        background: #dc2626 !important;
+        -webkit-print-color-adjust: exact;
+    }
+}

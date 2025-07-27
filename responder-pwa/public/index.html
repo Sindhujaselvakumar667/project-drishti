@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#dc2626" />
+        <meta
+            name="description"
+            content="Drishti Emergency Responder PWA - Real-time emergency response application for first responders"
+        />
+
+        <!-- PWA Meta Tags -->
+        <link
+            rel="apple-touch-icon"
+            href="%PUBLIC_URL%/icons/icon-192x192.png"
+        />
+        <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+        <!-- iOS PWA Meta Tags -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Emergency Responder" />
+
+        <!-- Windows PWA Meta Tags -->
+        <meta
+            name="msapplication-TileImage"
+            content="%PUBLIC_URL%/icons/icon-144x144.png"
+        />
+        <meta name="msapplication-TileColor" content="#dc2626" />
+
+        <!-- Security and Performance -->
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="format-detection" content="telephone=no" />
+
+        <!-- Preload critical resources -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+
+        <title>Emergency Responder</title>
+
+        <style>
+            /* Critical CSS for faster loading */
+            body {
+                margin: 0;
+                font-family:
+                    "Inter",
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    "Roboto",
+                    "Oxygen",
+                    "Ubuntu",
+                    "Cantarell",
+                    "Fira Sans",
+                    "Droid Sans",
+                    "Helvetica Neue",
+                    sans-serif;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+                background-color: #ffffff;
+            }
+
+            /* Loading spinner */
+            .loading-spinner {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 40px;
+                height: 40px;
+                border: 4px solid #f3f4f6;
+                border-top: 4px solid #dc2626;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                0% {
+                    transform: translate(-50%, -50%) rotate(0deg);
+                }
+                100% {
+                    transform: translate(-50%, -50%) rotate(360deg);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <noscript
+            >You need to enable JavaScript to run this emergency responder
+            app.</noscript
+        >
+        <div id="root">
+            <!-- Loading spinner while React loads -->
+            <div class="loading-spinner"></div>
+        </div>
+
+        <!-- PWA Install Script -->
+        <script>
+            // Register service worker
+            if ("serviceWorker" in navigator) {
+                window.addEventListener("load", function () {
+                    navigator.serviceWorker
+                        .register("%PUBLIC_URL%/sw.js")
+                        .then(function (registration) {
+                            console.log("SW registered: ", registration);
+                        })
+                        .catch(function (registrationError) {
+                            console.log(
+                                "SW registration failed: ",
+                                registrationError,
+                            );
+                        });
+                });
+            }
+
+            // Handle PWA install prompt
+            let deferredPrompt;
+            window.addEventListener("beforeinstallprompt", (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                // Show custom install button
+                const installButton = document.querySelector("#install-button");
+                if (installButton) {
+                    installButton.style.display = "block";
+                }
+            });
+        </script>
+    </body>
+</html>
