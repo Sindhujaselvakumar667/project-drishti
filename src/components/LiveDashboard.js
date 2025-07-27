@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, onSnapshot, addDoc } from "firebase/firestore";
+import { useEvent } from "../contexts/EventContext";
 import GoogleMap from "./GoogleMap";
 import VideoFeed from "./VideoFeed";
 import CrowdHeatmap from "./CrowdHeatmap";
@@ -11,7 +12,6 @@ import VertexAIForecastingService from "../services/prediction/vertexAIForecasti
 import AlertManagementSystem from "../services/prediction/alertManagement";
 import AIOrchestrationService from "../services/aiOrchestrationService";
 import {
-  mockEventCenter,
   mockCrowdData,
   mockResponderData,
   mockZones,
@@ -23,6 +23,10 @@ import {
 import "./LiveDashboard.css";
 
 const LiveDashboard = () => {
+  // Get event data from context
+  const { eventData, getEventName, getEventCenter, getEventLocation } =
+    useEvent();
+
   // State for map data
   const [crowdData, setCrowdData] = useState(mockCrowdData);
   const [responderData, setResponderData] = useState(mockResponderData);
@@ -54,15 +58,15 @@ const LiveDashboard = () => {
   // AI Orchestration state
   const [aiOrchestration, setAiOrchestration] = useState(null);
   const [intelligenceState, setIntelligenceState] = useState({
-    overallThreatLevel: 'low',
+    overallThreatLevel: "low",
     activeInsights: [],
     aiRecommendations: [],
     systemHealth: {
-      gemini: 'offline',
-      vertexAI: 'offline',
-      vision: 'offline',
-      forecasting: 'offline'
-    }
+      gemini: "offline",
+      vertexAI: "offline",
+      vision: "offline",
+      forecasting: "offline",
+    },
   });
   const [aiAlerts, setAiAlerts] = useState([]);
   const [lostAndFoundCases, setLostAndFoundCases] = useState([]);
@@ -146,24 +150,27 @@ const LiveDashboard = () => {
             console.log("Critical AI alert:", alert);
 
             // Show browser notification for critical alerts
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification('🚨 CRITICAL AI ALERT', {
+            if (
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              new Notification("🚨 CRITICAL AI ALERT", {
                 body: alert.message,
-                icon: '/favicon.ico',
-                tag: 'critical-ai'
+                icon: "/favicon.ico",
+                tag: "critical-ai",
               });
             }
           },
           onSystemHealthChange: (health) => {
-            setIntelligenceState(prev => ({
+            setIntelligenceState((prev) => ({
               ...prev,
-              systemHealth: health
+              systemHealth: health,
             }));
             console.log("AI system health:", health);
           },
           onError: (message, error) => {
             console.error("AI Orchestration error:", message, error);
-          }
+          },
         });
         setAiOrchestration(aiService);
 
@@ -242,7 +249,14 @@ const LiveDashboard = () => {
     }, 5000); // Update every 5 seconds
 
     return () => clearInterval(interval);
-  }, [isLiveMode, dataIngestionPipeline, predictionEnabled, useVideoData, videoCrowdData, alertSystem]);
+  }, [
+    isLiveMode,
+    dataIngestionPipeline,
+    predictionEnabled,
+    useVideoData,
+    videoCrowdData,
+    alertSystem,
+  ]);
 
   // Handle zone selection
   const handleZoneClick = (zone) => {
@@ -462,9 +476,7 @@ const LiveDashboard = () => {
             className={`toggle-btn insights-btn ${showInsightsDashboard ? "active" : ""}`}
             onClick={() => setShowInsightsDashboard(!showInsightsDashboard)}
           >
-            {showInsightsDashboard
-              ? "📊 Hide Insights"
-              : "📊 Data Insights"}
+            {showInsightsDashboard ? "📊 Hide Insights" : "📊 Data Insights"}
           </button>
         </div>
       </div>
@@ -475,9 +487,16 @@ const LiveDashboard = () => {
         <aside className="dashboard-sidebar">
           {/* Event Info */}
           <div className="info-panel">
-            <h3>📍 Event Location</h3>
-            <p>{mockEventCenter.name}</p>
-            <p>{mockEventCenter.address}</p>
+            <h3>📍 Event Details</h3>
+            <div className="event-name">{getEventName()}</div>
+            <div className="event-location">{getEventCenter()}</div>
+            {eventData && (
+              <div className="event-meta">
+                <small>
+                  Created: {new Date(eventData.createdAt).toLocaleDateString()}
+                </small>
+              </div>
+            )}
           </div>
 
           {/* Statistics */}
@@ -617,13 +636,23 @@ const LiveDashboard = () => {
                         onCrowdDataUpdate={handleVideoCrowdData}
                         onStatusChange={handleVideoStatusChange}
                         onError={handleVideoError}
-                        cameraLocation={mockEventCenter}
+                        cameraLocation={
+                          getEventLocation()?.coordinates || {
+                            lat: 37.7749,
+                            lng: -122.4194,
+                          }
+                        }
                         autoStart={false}
                       />
                     </div>
                     <div className="map-section">
                       <CrowdHeatmap
-                        center={mockEventCenter}
+                        center={
+                          getEventLocation()?.coordinates || {
+                            lat: 37.7749,
+                            lng: -122.4194,
+                          }
+                        }
                         zoom={15}
                         crowdData={getCurrentCrowdData()}
                         zones={zones}
@@ -636,7 +665,12 @@ const LiveDashboard = () => {
                   </div>
                 ) : (
                   <GoogleMap
-                    center={mockEventCenter}
+                    center={
+                      getEventLocation()?.coordinates || {
+                        lat: 37.7749,
+                        lng: -122.4194,
+                      }
+                    }
                     zoom={15}
                     crowdData={getCurrentCrowdData()}
                     responderData={responderData}
@@ -665,13 +699,23 @@ const LiveDashboard = () => {
                   onCrowdDataUpdate={handleVideoCrowdData}
                   onStatusChange={handleVideoStatusChange}
                   onError={handleVideoError}
-                  cameraLocation={mockEventCenter}
+                  cameraLocation={
+                    getEventLocation()?.coordinates || {
+                      lat: 37.7749,
+                      lng: -122.4194,
+                    }
+                  }
                   autoStart={false}
                 />
               </div>
               <div className="map-section">
                 <CrowdHeatmap
-                  center={mockEventCenter}
+                  center={
+                    getEventLocation()?.coordinates || {
+                      lat: 37.7749,
+                      lng: -122.4194,
+                    }
+                  }
                   zoom={15}
                   crowdData={getCurrentCrowdData()}
                   zones={zones}
@@ -684,7 +728,12 @@ const LiveDashboard = () => {
             </div>
           ) : (
             <GoogleMap
-              center={mockEventCenter}
+              center={
+                getEventLocation()?.coordinates || {
+                  lat: 37.7749,
+                  lng: -122.4194,
+                }
+              }
               zoom={15}
               crowdData={getCurrentCrowdData()}
               responderData={responderData}
@@ -767,17 +816,23 @@ const LiveDashboard = () => {
             <div className="ai-status">
               <div className="status-item">
                 <span className="status-label">Threat Level:</span>
-                <span className={`status-value threat-${intelligenceState.overallThreatLevel}`}>
+                <span
+                  className={`status-value threat-${intelligenceState.overallThreatLevel}`}
+                >
                   {intelligenceState.overallThreatLevel.toUpperCase()}
                 </span>
               </div>
               <div className="status-item">
                 <span className="status-label">Active Insights:</span>
-                <span className="status-value">{intelligenceState.activeInsights.length}</span>
+                <span className="status-value">
+                  {intelligenceState.activeInsights.length}
+                </span>
               </div>
               <div className="status-item">
                 <span className="status-label">AI Recommendations:</span>
-                <span className="status-value">{intelligenceState.aiRecommendations.length}</span>
+                <span className="status-value">
+                  {intelligenceState.aiRecommendations.length}
+                </span>
               </div>
             </div>
 
@@ -786,25 +841,33 @@ const LiveDashboard = () => {
               <div className="service-status-grid">
                 <div className="service-item">
                   <span className="service-name">Gemini AI</span>
-                  <span className={`service-status ${intelligenceState.systemHealth.gemini}`}>
+                  <span
+                    className={`service-status ${intelligenceState.systemHealth.gemini}`}
+                  >
                     {intelligenceState.systemHealth.gemini}
                   </span>
                 </div>
                 <div className="service-item">
                   <span className="service-name">Vertex AI</span>
-                  <span className={`service-status ${intelligenceState.systemHealth.vertexAI}`}>
+                  <span
+                    className={`service-status ${intelligenceState.systemHealth.vertexAI}`}
+                  >
                     {intelligenceState.systemHealth.vertexAI}
                   </span>
                 </div>
                 <div className="service-item">
                   <span className="service-name">Vision API</span>
-                  <span className={`service-status ${intelligenceState.systemHealth.vision}`}>
+                  <span
+                    className={`service-status ${intelligenceState.systemHealth.vision}`}
+                  >
                     {intelligenceState.systemHealth.vision}
                   </span>
                 </div>
                 <div className="service-item">
                   <span className="service-name">Forecasting</span>
-                  <span className={`service-status ${intelligenceState.systemHealth.forecasting}`}>
+                  <span
+                    className={`service-status ${intelligenceState.systemHealth.forecasting}`}
+                  >
                     {intelligenceState.systemHealth.forecasting}
                   </span>
                 </div>
@@ -817,7 +880,10 @@ const LiveDashboard = () => {
                 <h4>⚡ AI Alerts</h4>
                 <div className="ai-alerts-list">
                   {aiAlerts.slice(-3).map((alert, index) => (
-                    <div key={index} className={`ai-alert-item ${alert.severity}`}>
+                    <div
+                      key={index}
+                      className={`ai-alert-item ${alert.severity}`}
+                    >
                       <div className="alert-header">
                         <span className="alert-type">{alert.type}</span>
                         <span className="alert-confidence">
@@ -935,19 +1001,23 @@ const LiveDashboard = () => {
         onClick={() => {
           if (alertSystem) {
             alertSystem.createEmergencyAlert({
-              type: 'EMERGENCY_OVERRIDE',
-              severity: 'Critical',
-              message: 'Emergency situation declared - Manual override activated',
+              type: "EMERGENCY_OVERRIDE",
+              severity: "Critical",
+              message:
+                "Emergency situation declared - Manual override activated",
               timestamp: new Date().toISOString(),
-              zone: 'All Zones'
+              zone: "All Zones",
             });
           }
           // Add emergency notification
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('🚨 EMERGENCY ALERT', {
-              body: 'Emergency situation declared. All units respond immediately.',
-              icon: '/favicon.ico',
-              tag: 'emergency'
+          if (
+            "Notification" in window &&
+            Notification.permission === "granted"
+          ) {
+            new Notification("🚨 EMERGENCY ALERT", {
+              body: "Emergency situation declared. All units respond immediately.",
+              icon: "/favicon.ico",
+              tag: "emergency",
             });
           }
         }}
