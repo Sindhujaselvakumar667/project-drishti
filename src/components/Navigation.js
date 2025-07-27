@@ -8,7 +8,7 @@ const Navigation = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { getEventName, getEventCenter } = useEvent();
+  const { getEventName, getEventCenter, getEventLocation } = useEvent();
 
   const navigationItems = [
     {
@@ -68,7 +68,20 @@ const Navigation = () => {
           <h3>Current Event</h3>
           <div className="event-details">
             <div className="event-name">{getEventName()}</div>
-            <div className="event-location">{getEventCenter()}</div>
+            <div className="event-location">
+              <div className="location-display">
+                <span className="location-icon">📍</span>
+                <div className="location-text">
+                  <div className="location-main">{getEventCenter()}</div>
+                  {getEventLocation()?.coordinates && (
+                    <div className="location-coordinates">
+                      {getEventLocation().coordinates.lat.toFixed(6)},{" "}
+                      {getEventLocation().coordinates.lng.toFixed(6)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

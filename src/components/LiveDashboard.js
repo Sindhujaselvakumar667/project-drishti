@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db } from "../firebase";
 import { collection, onSnapshot, addDoc } from "firebase/firestore";
 import { useEvent } from "../contexts/EventContext";
@@ -19,26 +19,37 @@ import {
   generateRandomCrowdUpdate,
   generateRandomResponderUpdate,
   generateZoneUpdate,
+  generateCrowdDataAroundLocation,
+  generateRespondersAroundLocation,
+  generateZonesAroundLocation,
+  generateBengaluruCrowdData,
+  generateBengaluruResponders,
+  generateBengaluruZones,
 } from "../data/mockData";
 import "./LiveDashboard.css";
 
 const LiveDashboard = () => {
   // Get event data from context
-  const { eventData, getEventName, getEventCenter, getEventLocation } =
-    useEvent();
+  const {
+    eventData,
+    getEventName,
+    getEventCenter,
+    getEventLocation,
+    updateEvent,
+  } = useEvent();
 
   // State for map data
-  const [crowdData, setCrowdData] = useState(mockCrowdData);
-  const [responderData, setResponderData] = useState(mockResponderData);
-  const [zones, setZones] = useState(mockZones);
+  const [crowdData, setCrowdData] = useState([]);
+  const [responderData, setResponderData] = useState([]);
+  const [zones, setZones] = useState([]);
   const [alerts, setAlerts] = useState(mockAlerts);
 
-  // State for dashboard controls
+  // State for map controls
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showResponders, setShowResponders] = useState(true);
   const [showZones, setShowZones] = useState(true);
-  const [selectedZone, setSelectedZone] = useState(null);
-  const [isLiveMode, setIsLiveMode] = useState(true);
+  const [showMapControls, setShowMapControls] = useState(false);
+  const mapControlsRef = useRef(null);
 
   // Video feed state
   const [videoEnabled, setVideoEnabled] = useState(false);
@@ -46,31 +57,71 @@ const LiveDashboard = () => {
   const [videoStatus, setVideoStatus] = useState("stopped");
   const [useVideoData, setUseVideoData] = useState(false);
 
-  // Prediction system state
-  const [predictionEnabled, setPredictionEnabled] = useState(false);
-  const [predictionData, setPredictionData] = useState(null);
-  const [predictionAlerts, setPredictionAlerts] = useState([]);
-  const [modelStatus, setModelStatus] = useState("offline");
-  const [dataIngestionPipeline, setDataIngestionPipeline] = useState(null);
-  const [forecastingService, setForecastingService] = useState(null);
-  const [alertSystem, setAlertSystem] = useState(null);
+  // Layout state for video and heatmap
+  const [layoutMode, setLayoutMode] = useState("vertical"); // 'vertical', 'compact', 'expanded'
+  const [activeTab, setActiveTab] = useState("video"); // 'video' or 'heatmap'
 
-  // AI Orchestration state
-  const [aiOrchestration, setAiOrchestration] = useState(null);
-  const [intelligenceState, setIntelligenceState] = useState({
-    overallThreatLevel: "low",
-    activeInsights: [],
-    aiRecommendations: [],
-    systemHealth: {
-      gemini: "offline",
-      vertexAI: "offline",
-      vision: "offline",
-      forecasting: "offline",
+  // Prediction state
+  const [predictionEnabled, setPredictionEnabled] = useState(false);
+  const [predictionData, setPredictionData] = useState({
+    predictions: [6.2, 6.8, 7.1, 7.5, 8.2, 8.7, 9.1, 8.9, 8.5, 8.0],
+    upperBound: [7.2, 7.8, 8.1, 8.5, 9.2, 9.7, 10.1, 9.9, 9.5, 9.0],
+    lowerBound: [5.2, 5.8, 6.1, 6.5, 7.2, 7.7, 8.1, 7.9, 7.5, 7.0],
+    forecastHorizon: 10,
+    confidence: 0.85,
+    timestamp: new Date().toISOString(),
+    alert: {
+      level: "WARNING",
+      message: "Crowd surge predicted in 15 minutes",
+      zone: "MG Road Commercial Hub",
     },
   });
+  const [predictionAlerts, setPredictionAlerts] = useState([]);
+
+  // Prediction services
+  const [dataIngestionPipeline, setDataIngestionPipeline] = useState(null);
+  const [forecastingService, setForecastingService] = useState(null);
+  const [alertManagement, setAlertManagement] = useState(null);
+  const [aiOrchestration, setAiOrchestration] = useState(null);
+
+  // AI Intelligence state
   const [aiAlerts, setAiAlerts] = useState([]);
   const [lostAndFoundCases, setLostAndFoundCases] = useState([]);
   const [showInsightsDashboard, setShowInsightsDashboard] = useState(false);
+  const [mapKey, setMapKey] = useState(0);
+
+  // Initialize crowd data, responders, and zones - using hardcoded Bengaluru data
+  useEffect(() => {
+    // Set event location to Bengaluru
+    const bengaluruEvent = {
+      id: "bengaluru_event_001",
+      name: "Bengaluru Crowd Monitoring",
+      location: {
+        name: "Bengaluru",
+        address: "Bengaluru, Karnataka, India",
+        coordinates: {
+          lat: 12.9716,
+          lng: 77.5946,
+        },
+      },
+      createdAt: new Date().toISOString(),
+      status: "active",
+    };
+
+    // Update the event context
+    updateEvent(bengaluruEvent);
+
+    // Use hardcoded Bengaluru crowd data
+    const bengaluruCrowdData = generateBengaluruCrowdData();
+    setCrowdData(bengaluruCrowdData);
+
+    // Generate responders and zones for Bengaluru
+    const bengaluruResponders = generateBengaluruResponders();
+    const bengaluruZones = generateBengaluruZones();
+
+    setResponderData(bengaluruResponders || []);
+    setZones(bengaluruZones || []);
+  }, []);
 
   // Initialize prediction services
   useEffect(() => {
@@ -93,333 +144,158 @@ const LiveDashboard = () => {
         setDataIngestionPipeline(pipeline);
 
         // Initialize forecasting service
-        const forecasting = new VertexAIForecastingService();
-        await forecasting.initialize({
-          onPredictionUpdate: (prediction) => {
-            setPredictionData(prediction);
-            console.log("New prediction:", prediction);
-          },
-          onSurgeAlert: (alert) => {
-            console.log("Surge alert:", alert);
-            if (alertSystem) {
-              alertSystem.createSurgeAlert(alert);
-            }
-          },
-          onError: (message, error) =>
-            console.error("Forecasting error:", message, error),
-          onModelStatusChange: (status) => {
-            setModelStatus(status);
-            console.log("Model status:", status);
+        const forecaster = new VertexAIForecastingService();
+        await forecaster.initialize({
+          modelPath: "crowd-forecasting-model",
+          confidenceThreshold: 0.8,
+        });
+        setForecastingService(forecaster);
+
+        // Initialize alert management
+        const alertManager = new AlertManagementSystem();
+        await alertManager.initialize({
+          thresholds: {
+            crowd_surge: 8.5,
+            evacuation_risk: 9.0,
+            capacity_limit: 0.9,
           },
         });
-        setForecastingService(forecasting);
+        setAlertManagement(alertManager);
 
-        // Initialize alert management system
-        const alerts = new AlertManagementSystem();
-        await alerts.initialize({
-          onAlertCreated: (alert) => {
-            setPredictionAlerts((prev) => [...prev, alert]);
-            console.log("Alert created:", alert);
-          },
-          onAlertEscalated: (alert) => {
-            console.log("Alert escalated:", alert);
-          },
-          onAlertResolved: (alert) => {
-            setPredictionAlerts((prev) =>
-              prev.filter((a) => a.id !== alert.id),
-            );
-            console.log("Alert resolved:", alert);
-          },
-          onError: (message, error) =>
-            console.error("Alert system error:", message, error),
-        });
-
-        // Request notification permissions
-        alerts.requestNotificationPermissions();
-        setAlertSystem(alerts);
-
-        // Initialize AI Orchestration Service
+        // Initialize AI orchestration
         const aiService = new AIOrchestrationService();
-        await aiService.initialize({
-          onIntelligenceUpdate: (intelligence) => {
-            setIntelligenceState(intelligence);
-            console.log("Intelligence update:", intelligence);
-          },
-          onCriticalAlert: (alert) => {
-            setAiAlerts((prev) => [...prev, alert]);
-            console.log("Critical AI alert:", alert);
-
-            // Show browser notification for critical alerts
-            if (
-              "Notification" in window &&
-              Notification.permission === "granted"
-            ) {
-              new Notification("🚨 CRITICAL AI ALERT", {
-                body: alert.message,
-                icon: "/favicon.ico",
-                tag: "critical-ai",
-              });
-            }
-          },
-          onSystemHealthChange: (health) => {
-            setIntelligenceState((prev) => ({
-              ...prev,
-              systemHealth: health,
-            }));
-            console.log("AI system health:", health);
-          },
-          onError: (message, error) => {
-            console.error("AI Orchestration error:", message, error);
-          },
-        });
+        await aiService.initialize();
         setAiOrchestration(aiService);
-
-        console.log("All AI services initialized successfully");
       } catch (error) {
-        console.error("Failed to initialize prediction services:", error);
+        console.error("Error initializing prediction services:", error);
       }
     };
 
-    initializePredictionServices();
+    if (predictionEnabled) {
+      initializePredictionServices();
+    }
 
     return () => {
-      // Cleanup services
       if (dataIngestionPipeline) {
-        dataIngestionPipeline.destroy();
-      }
-      if (forecastingService) {
-        forecastingService.destroy();
-      }
-      if (alertSystem) {
-        alertSystem.destroy();
-      }
-      if (aiOrchestration) {
-        aiOrchestration.destroy();
+        dataIngestionPipeline.stop();
       }
     };
-  }, []); // Empty dependency array is correct here - only run once on mount
+  }, [predictionEnabled]);
 
-  // Real-time Firestore listeners
+  // Real-time data simulation
   useEffect(() => {
-    if (!isLiveMode) return;
-
-    const unsubscribeAlerts = onSnapshot(
-      collection(db, "SecurityAlerts"),
-      (snapshot) => {
-        const alertsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setAlerts(alertsData);
-      },
-      (error) => {
-        console.error("Error fetching alerts:", error);
-      },
-    );
-
-    return () => {
-      unsubscribeAlerts();
-    };
-  }, [isLiveMode]);
-
-  // Simulate live data updates when not connected to real Firestore data
-  useEffect(() => {
-    if (!isLiveMode) return;
+    if (!predictionEnabled) return;
 
     const interval = setInterval(() => {
-      const newCrowdData = generateRandomCrowdUpdate();
-      const newZones = generateZoneUpdate();
+      // Update crowd data
+      setCrowdData((prev) =>
+        prev.map((point) => ({
+          ...point,
+          ...generateRandomCrowdUpdate(),
+        })),
+      );
 
-      setCrowdData(newCrowdData);
-      setResponderData(generateRandomResponderUpdate());
-      setZones(newZones);
+      // Update responder data
+      setResponderData((prev) =>
+        prev.map((responder) => ({
+          ...responder,
+          ...generateRandomResponderUpdate(),
+        })),
+      );
 
-      // Feed data to prediction pipeline
-      if (dataIngestionPipeline && predictionEnabled) {
-        const currentCrowdData = useVideoData ? videoCrowdData : newCrowdData;
-        dataIngestionPipeline.ingestCrowdData(currentCrowdData);
+      // Update zone data
+      setZones((prev) => generateZoneUpdate());
+
+      // Generate new predictions every 30 seconds
+      if (Math.random() > 0.7) {
+        makePrediction();
       }
-
-      // Check for capacity alerts
-      newZones.forEach((zone) => {
-        if (zone.alertLevel === "Critical" && alertSystem) {
-          alertSystem.createCapacityAlert(zone);
-        }
-      });
     }, 5000); // Update every 5 seconds
 
     return () => clearInterval(interval);
-  }, [
-    isLiveMode,
-    dataIngestionPipeline,
-    predictionEnabled,
-    useVideoData,
-    videoCrowdData,
-    alertSystem,
-  ]);
+  }, [predictionEnabled]);
 
-  // Handle zone selection
-  const handleZoneClick = (zone) => {
-    setSelectedZone(zone);
-  };
+  // Close map controls when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        mapControlsRef.current &&
+        !mapControlsRef.current.contains(event.target)
+      ) {
+        setShowMapControls(false);
+      }
+    };
 
-  // Handle video crowd data updates
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   const handleVideoCrowdData = (data) => {
     setVideoCrowdData(data);
 
-    // Feed real-time data to prediction pipeline
-    if (dataIngestionPipeline && predictionEnabled && data && data.length > 0) {
-      const realTimeData = {
-        totalPeople:
-          data
-            .filter((point) => point.isTotal)
-            .reduce((sum, point) => sum + point.personCount, 0) ||
-          data.reduce((sum, point) => sum + point.personCount, 0),
-        avgDensity:
-          data.reduce((sum, point) => sum + point.density, 0) / data.length,
-        timestamp: new Date().toISOString(),
-        source: "video_ai",
-        confidence:
-          data.reduce((sum, point) => sum + (point.confidence || 0), 0) /
-          data.length,
-      };
-
-      dataIngestionPipeline.ingestCrowdData([realTimeData]);
+    // Feed data to prediction system if enabled
+    if (predictionEnabled && dataIngestionPipeline) {
+      dataIngestionPipeline.ingestCrowdData(data);
     }
 
-    // Store video data to Firestore for persistence (batch operations for performance)
-    if (data && data.length > 0) {
-      try {
-        // Only store significant data points to avoid overwhelming Firestore
-        const significantPoints = data.filter(
-          (point) =>
-            point.personCount > 0 || point.isTotal || point.density > 3,
-        );
-
-        if (significantPoints.length > 0) {
-          significantPoints.forEach(async (point) => {
-            await addDoc(collection(db, "CrowdDensity"), {
-              ...point,
-              source: "video_ai",
-              eventId: "current_event",
-              processingTime: Date.now(),
-            });
-          });
-        }
-      } catch (error) {
-        console.error("Error storing video crowd data:", error);
-      }
+    // Feed data to AI orchestration
+    if (aiOrchestration) {
+      aiOrchestration.processCrowdData(data);
     }
   };
 
-  // Handle video status changes
   const handleVideoStatusChange = (status) => {
     setVideoStatus(status);
   };
 
-  // Handle video errors
-  const handleVideoError = (message, error) => {
-    console.error("Video Feed Error:", message, error);
-    // Could show a toast notification here
+  const handleVideoError = (error) => {
+    console.error("Video feed error:", error);
+    setVideoStatus("error");
   };
 
-  // Make AI prediction
-  const makePrediction = async () => {
-    if (!forecastingService || !predictionEnabled) return;
-
-    try {
-      const currentData = {
-        totalPeople: getCurrentCrowdData().reduce(
-          (sum, point) => sum + (point.personCount || 1),
-          0,
-        ),
-        avgDensity:
-          getCurrentCrowdData().reduce((sum, point) => sum + point.density, 0) /
-            getCurrentCrowdData().length || 0,
-        avgVelocity: 1.2, // Mock velocity data
-        congestionScore:
-          zones.filter((z) => z.alertLevel === "Critical").length * 2,
-        hotspotCount: getCurrentCrowdData().filter((point) => point.density > 7)
-          .length,
-      };
-
-      const prediction =
-        await forecastingService.predictCrowdSurge(currentData);
-      setPredictionData(prediction);
-    } catch (error) {
-      console.error("Prediction failed:", error);
-    }
+  const handleZoneClick = (zone) => {
+    console.log("Zone clicked:", zone);
   };
 
-  // Toggle prediction system
-  const togglePredictionSystem = async () => {
-    setPredictionEnabled(!predictionEnabled);
-
-    if (!predictionEnabled) {
-      // Start prediction system
-      if (dataIngestionPipeline) {
-        await makePrediction();
-      }
-    }
-  };
-
-  // Handle prediction alert actions
-  const handleAlertAcknowledge = async (alertId) => {
-    if (alertSystem) {
-      await alertSystem.acknowledgeAlert(alertId, "Dashboard User");
-    }
-  };
-
-  const handleAlertResolve = async (alertId) => {
-    if (alertSystem) {
-      await alertSystem.resolveAlert(
-        alertId,
-        "Dashboard User",
-        "Resolved from dashboard",
-      );
-    }
-  };
-
-  // Add test alert to Firestore
-  const addTestAlert = async () => {
-    try {
-      await addDoc(collection(db, "SecurityAlerts"), {
-        zone: "Test Zone",
-        type: "Crowd Density",
-        severity: "High",
-        message: "Test alert from dashboard",
-        timestamp: new Date().toISOString(),
-        status: "Active",
-      });
-    } catch (error) {
-      console.error("Error adding alert:", error);
-    }
-  };
-
-  // Get zone statistics
-  const getZoneStats = () => {
-    const totalCapacity = zones.reduce((sum, zone) => sum + zone.capacity, 0);
-    const totalCurrent = zones.reduce(
-      (sum, zone) => sum + zone.currentCount,
-      0,
+  const handleAlertAcknowledge = (alertId) => {
+    setPredictionAlerts((prev) =>
+      prev.map((alert) =>
+        alert.id === alertId ? { ...alert, acknowledged: true } : alert,
+      ),
     );
-    const criticalZones = zones.filter(
-      (zone) => zone.alertLevel === "Critical",
-    ).length;
-    const warningZones = zones.filter(
-      (zone) => zone.alertLevel === "Warning",
-    ).length;
-
-    return {
-      totalCapacity,
-      totalCurrent,
-      occupancyRate: ((totalCurrent / totalCapacity) * 100).toFixed(1),
-      criticalZones,
-      warningZones,
-    };
   };
 
-  const stats = getZoneStats();
+  const handleAlertResolve = (alertId) => {
+    setPredictionAlerts((prev) => prev.filter((alert) => alert.id !== alertId));
+  };
+
+  const makePrediction = async () => {
+    if (!forecastingService) return;
+
+    try {
+      const currentData = useVideoData ? videoCrowdData : crowdData;
+      const prediction = await forecastingService.generateForecast({
+        crowdData: currentData,
+        zones: zones,
+        timeHorizon: 30, // 30 minutes
+        confidence: 0.8,
+      });
+
+      setPredictionData(prediction);
+
+      // Check for alerts
+      if (alertManagement && prediction.alert) {
+        const newAlert = await alertManagement.processAlert(prediction.alert);
+        if (newAlert) {
+          setPredictionAlerts((prev) => [newAlert, ...prev.slice(0, 9)]);
+        }
+      }
+    } catch (error) {
+      console.error("Error making prediction:", error);
+    }
+  };
 
   // Get current crowd data based on selected source
   const getCurrentCrowdData = () => {
@@ -430,607 +306,669 @@ const LiveDashboard = () => {
     return crowdData;
   };
 
-  // Get total people count from video data
+  // Calculate statistics
+  const calculateStats = () => {
+    const currentData = getCurrentCrowdData();
+    const safeZones = zones || [];
+    const totalCapacity = safeZones.reduce(
+      (sum, zone) => sum + (zone.capacity || 0),
+      0,
+    );
+    const totalCurrent = safeZones.reduce(
+      (sum, zone) => sum + (zone.currentCount || 0),
+      0,
+    );
+    const occupancyRate =
+      totalCapacity > 0 ? (totalCurrent / totalCapacity) * 100 : 0;
+    const criticalZones = safeZones.filter(
+      (zone) => zone.alertLevel === "Critical",
+    ).length;
+    const warningZones = safeZones.filter(
+      (zone) => zone.alertLevel === "Warning",
+    ).length;
+    const normalZones = safeZones.filter(
+      (zone) => zone.alertLevel === "Normal",
+    ).length;
+
+    return {
+      totalCapacity,
+      totalCurrent,
+      occupancyRate: occupancyRate.toFixed(1),
+      criticalZones,
+      warningZones,
+      normalZones,
+    };
+  };
+
+  const stats = calculateStats();
+  const totalCapacity = stats.totalCapacity || 0;
+  const currentCount = stats.totalCurrent || 0;
+  const criticalZones = stats.criticalZones || 0;
+  const warningZones = stats.warningZones || 0;
+  const normalZones = stats.normalZones || 0;
+
   const getTotalPeopleCount = () => {
-    if (useVideoData && videoCrowdData.length > 0) {
-      const totalPoint = videoCrowdData.find((point) => point.isTotal);
-      return totalPoint
-        ? totalPoint.personCount
-        : videoCrowdData.reduce((sum, point) => sum + point.personCount, 0);
-    }
-    return crowdData.reduce((sum, point) => sum + (point.personCount || 1), 0);
+    return (videoCrowdData || []).reduce((total, point) => {
+      return total + (point.personCount || 0);
+    }, 0);
   };
 
   return (
     <div className="live-dashboard">
-      {/* Dashboard Controls Header */}
-      <div className="dashboard-controls-header">
+      {/* Header */}
+      <header className="dashboard-header">
+        <div className="dashboard-title">
+          <h1>🎯 Live Dashboard</h1>
+          <p>Real-time crowd monitoring and intelligence</p>
+        </div>
+
         <div className="header-controls">
           <div className="status-indicator">
-            <span
-              className={`status-dot ${isLiveMode ? "live" : "offline"}`}
-            ></span>
-            {isLiveMode ? "LIVE" : "OFFLINE"}
+            <div className="status-dot"></div>
+            <span>LIVE</span>
           </div>
+
           <button
-            className="toggle-btn"
-            onClick={() => setIsLiveMode(!isLiveMode)}
+            className={`control-btn ${predictionEnabled ? "active" : ""}`}
+            onClick={() => setPredictionEnabled(!predictionEnabled)}
           >
-            {isLiveMode ? "Pause Live" : "Resume Live"}
+            🔮 AI Predictions {predictionEnabled ? "ON" : "OFF"}
           </button>
+
           <button
-            className="toggle-btn video-btn"
+            className={`control-btn ${videoEnabled ? "active" : ""}`}
             onClick={() => setVideoEnabled(!videoEnabled)}
           >
-            {videoEnabled ? "📹 Hide Video" : "📹 Show Video"}
+            📹 Video {videoEnabled ? "ON" : "OFF"}
           </button>
+
           <button
-            className={`toggle-btn prediction-btn ${predictionEnabled ? "active" : ""}`}
-            onClick={togglePredictionSystem}
+            className="control-btn secondary"
+            onClick={() => window.location.reload()}
           >
-            {predictionEnabled
-              ? "🔮 AI Predictions ON"
-              : "🔮 AI Predictions OFF"}
+            🔄 Refresh
           </button>
+
           <button
-            className={`toggle-btn insights-btn ${showInsightsDashboard ? "active" : ""}`}
+            className="control-btn"
             onClick={() => setShowInsightsDashboard(!showInsightsDashboard)}
           >
-            {showInsightsDashboard ? "📊 Hide Insights" : "📊 Data Insights"}
+            📊 Data Insights
           </button>
-        </div>
-      </div>
 
-      {/* Main Content */}
+          {videoEnabled && (
+            <div className="layout-controls">
+              <select
+                className="layout-selector"
+                value={layoutMode}
+                onChange={(e) => setLayoutMode(e.target.value)}
+                title="Choose video and heatmap layout"
+              >
+                <option value="vertical">📱 Video Above Heatmap</option>
+                <option value="compact">📋 Compact View</option>
+                <option value="expanded">📺 Expanded View</option>
+                <option value="tabbed">📑 Tabbed View</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Dashboard Content */}
       <div className="dashboard-content">
-        {/* Left Sidebar - Controls & Stats */}
-        <aside className="dashboard-sidebar">
-          {/* Event Info */}
-          <div className="info-panel">
-            <h3>📍 Event Details</h3>
-            <div className="event-name">{getEventName()}</div>
-            <div className="event-location">{getEventCenter()}</div>
-            {eventData && (
-              <div className="event-meta">
-                <small>
-                  Created: {new Date(eventData.createdAt).toLocaleDateString()}
-                </small>
+        {/* Primary Section - Map */}
+        <div className="primary-section">
+          <div className="map-container">
+            {/* Map Controls */}
+            <div className="map-controls-menu" ref={mapControlsRef}>
+              <button
+                className={`map-controls-toggle ${showMapControls ? "active" : ""}`}
+                onClick={() => setShowMapControls(!showMapControls)}
+                title="Map Controls"
+              >
+                ⋯
+              </button>
+
+              {showMapControls && (
+                <div className="map-controls-dropdown">
+                  <div className="map-controls-header">
+                    <h4>🎛️ Map Controls</h4>
+                    <button
+                      className="close-controls"
+                      onClick={() => setShowMapControls(false)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="control-item">
+                    <input
+                      type="checkbox"
+                      id="heatmap"
+                      checked={showHeatmap}
+                      onChange={(e) => setShowHeatmap(e.target.checked)}
+                    />
+                    <label htmlFor="heatmap">🔥 Crowd Heatmap</label>
+                  </div>
+
+                  <div className="control-item">
+                    <input
+                      type="checkbox"
+                      id="responders"
+                      checked={showResponders}
+                      onChange={(e) => setShowResponders(e.target.checked)}
+                    />
+                    <label htmlFor="responders">👮 Responders</label>
+                  </div>
+
+                  <div className="control-item">
+                    <input
+                      type="checkbox"
+                      id="zones"
+                      checked={showZones}
+                      onChange={(e) => setShowZones(e.target.checked)}
+                    />
+                    <label htmlFor="zones">🏛️ Zones</label>
+                  </div>
+
+                  <div className="control-item">
+                    <button
+                      className="refresh-map-btn"
+                      onClick={() => setMapKey((prev) => prev + 1)}
+                      style={{
+                        background: "#3b82f6",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 16px",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        width: "100%",
+                      }}
+                    >
+                      🔄 Force Refresh Heatmap
+                    </button>
+                  </div>
+
+                  <div className="control-item">
+                    <input
+                      type="checkbox"
+                      id="aidata"
+                      checked={useVideoData && videoCrowdData.length > 0}
+                      disabled={!useVideoData}
+                      readOnly
+                    />
+                    <label htmlFor="aidata">
+                      📊 AI Data Status: {videoCrowdData.length} points
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Main Map Component */}
+            {predictionEnabled ? (
+              <div className="dashboard-split">
+                <div className="map-prediction-split">
+                  {videoEnabled ? (
+                    <div
+                      className={`video-heatmap-container layout-${layoutMode}`}
+                    >
+                      {layoutMode === "tabbed" ? (
+                        <div className="tabbed-layout">
+                          <div className="tab-controls">
+                            <button
+                              className={`tab-btn ${activeTab === "video" ? "active" : ""}`}
+                              onClick={() => setActiveTab("video")}
+                            >
+                              📹 Video Feed
+                            </button>
+                            <button
+                              className={`tab-btn ${activeTab === "heatmap" ? "active" : ""}`}
+                              onClick={() => setActiveTab("heatmap")}
+                            >
+                              🔥 Heatmap
+                            </button>
+                          </div>
+                          <div className="tab-content">
+                            {activeTab === "video" ? (
+                              <div className="video-section-full">
+                                <VideoFeed
+                                  onCrowdDataUpdate={handleVideoCrowdData}
+                                  onStatusChange={handleVideoStatusChange}
+                                  onError={handleVideoError}
+                                  cameraLocation={{
+                                    lat: 12.9716,
+                                    lng: 77.5946,
+                                  }}
+                                  autoStart={false}
+                                />
+                              </div>
+                            ) : (
+                              <div className="map-section-full">
+                                <GoogleMap
+                                  key={mapKey}
+                                  center={{
+                                    lat: 12.9716,
+                                    lng: 77.5946,
+                                  }}
+                                  zoom={15}
+                                  crowdData={getCurrentCrowdData()}
+                                  responderData={responderData}
+                                  zones={zones}
+                                  showHeatmap={showHeatmap}
+                                  showResponders={showResponders}
+                                  showZones={showZones}
+                                  onMapLoad={(map) =>
+                                    console.log("Map loaded:", map)
+                                  }
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="vertical-video-heatmap">
+                          <div className="video-section-top">
+                            <VideoFeed
+                              onCrowdDataUpdate={handleVideoCrowdData}
+                              onStatusChange={handleVideoStatusChange}
+                              onError={handleVideoError}
+                              cameraLocation={{
+                                lat: 12.9716,
+                                lng: 77.5946,
+                              }}
+                              autoStart={false}
+                            />
+                          </div>
+                          <div className="section-divider">
+                            <div className="divider-line"></div>
+                            <div className="divider-text">
+                              📊 CROWD MONITORING DATA
+                            </div>
+                            <div className="divider-line"></div>
+                          </div>
+                          <div className="heatmap-section-below">
+                            <div className="heatmap-header">
+                              <h3>🗺️ Bengaluru Crowd Heatmap</h3>
+                              <div className="heatmap-stats">
+                                <span>
+                                  Real-time crowd monitoring for Bengaluru,
+                                  Karnataka
+                                </span>
+                              </div>
+                              <div className="heatmap-data-table">
+                                <div className="heatmap-data-item">
+                                  <div className="heatmap-data-label">
+                                    Data Points
+                                  </div>
+                                  <div className="heatmap-data-value">40</div>
+                                </div>
+                                <div className="heatmap-data-item">
+                                  <div className="heatmap-data-label">
+                                    Avg Density
+                                  </div>
+                                  <div className="heatmap-data-value">6.2</div>
+                                </div>
+                                <div className="heatmap-data-item">
+                                  <div className="heatmap-data-label">
+                                    Max Density
+                                  </div>
+                                  <div className="heatmap-data-value">9.0</div>
+                                </div>
+                                <div className="heatmap-data-item">
+                                  <div className="heatmap-data-label">
+                                    Critical Areas
+                                  </div>
+                                  <div className="heatmap-data-value critical">
+                                    10
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="heatmap-content">
+                              <GoogleMap
+                                key={mapKey}
+                                center={{
+                                  lat: 12.9716,
+                                  lng: 77.5946,
+                                }}
+                                zoom={15}
+                                crowdData={getCurrentCrowdData()}
+                                responderData={responderData}
+                                zones={zones}
+                                showHeatmap={showHeatmap}
+                                showResponders={showResponders}
+                                showZones={showZones}
+                                onMapLoad={(map) =>
+                                  console.log("Map loaded:", map)
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="map-section">
+                      <GoogleMap
+                        key={mapKey}
+                        center={{
+                          lat: 12.9716,
+                          lng: 77.5946,
+                        }}
+                        zoom={15}
+                        crowdData={getCurrentCrowdData()}
+                        responderData={responderData}
+                        zones={zones}
+                        showHeatmap={showHeatmap}
+                        showResponders={showResponders}
+                        showZones={showZones}
+                        onMapLoad={(map) => console.log("Map loaded:", map)}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="prediction-section">
+                  <PredictionDashboard
+                    predictionData={predictionData}
+                    alertData={predictionAlerts}
+                    onAlertAcknowledge={handleAlertAcknowledge}
+                    onAlertResolve={handleAlertResolve}
+                    isVisible={predictionEnabled}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="single-map-container">
+                {videoEnabled ? (
+                  <div
+                    className={`video-heatmap-container layout-${layoutMode}`}
+                  >
+                    {layoutMode === "tabbed" ? (
+                      <div className="tabbed-layout">
+                        <div className="tab-controls">
+                          <button
+                            className={`tab-btn ${activeTab === "video" ? "active" : ""}`}
+                            onClick={() => setActiveTab("video")}
+                          >
+                            📹 Video Feed
+                          </button>
+                          <button
+                            className={`tab-btn ${activeTab === "heatmap" ? "active" : ""}`}
+                            onClick={() => setActiveTab("heatmap")}
+                          >
+                            🔥 Heatmap
+                          </button>
+                        </div>
+                        <div className="tab-content">
+                          {activeTab === "video" ? (
+                            <div className="video-section-full">
+                              <VideoFeed
+                                onCrowdDataUpdate={handleVideoCrowdData}
+                                onStatusChange={handleVideoStatusChange}
+                                onError={handleVideoError}
+                                cameraLocation={{
+                                  lat: 12.9716,
+                                  lng: 77.5946,
+                                }}
+                                autoStart={false}
+                              />
+                            </div>
+                          ) : (
+                            <div className="map-section-full">
+                              <CrowdHeatmap
+                                center={{
+                                  lat: 12.9716,
+                                  lng: 77.5946,
+                                }}
+                                zoom={15}
+                                crowdData={getCurrentCrowdData()}
+                                zones={zones}
+                                showHeatmap={showHeatmap}
+                                showZones={showZones}
+                                onMapLoad={(map) =>
+                                  console.log("Map loaded:", map)
+                                }
+                                onZoneClick={handleZoneClick}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="vertical-video-heatmap">
+                        <div className="video-section-top">
+                          <VideoFeed
+                            onCrowdDataUpdate={handleVideoCrowdData}
+                            onStatusChange={handleVideoStatusChange}
+                            onError={handleVideoError}
+                            cameraLocation={{
+                              lat: 12.9716,
+                              lng: 77.5946,
+                            }}
+                            autoStart={false}
+                          />
+                        </div>
+                        <div className="section-divider">
+                          <div className="divider-line"></div>
+                          <div className="divider-text">
+                            📊 CROWD MONITORING DATA
+                          </div>
+                          <div className="divider-line"></div>
+                        </div>
+                        <div className="heatmap-section-below">
+                          <div className="heatmap-header">
+                            <h3>🗺️ Bengaluru Crowd Heatmap</h3>
+                            <div className="heatmap-stats">
+                              <span>
+                                Real-time crowd monitoring for Bengaluru,
+                                Karnataka
+                              </span>
+                            </div>
+                            <div className="heatmap-data-table">
+                              <div className="heatmap-data-item">
+                                <div className="heatmap-data-label">
+                                  Data Points
+                                </div>
+                                <div className="heatmap-data-value">40</div>
+                              </div>
+                              <div className="heatmap-data-item">
+                                <div className="heatmap-data-label">
+                                  Avg Density
+                                </div>
+                                <div className="heatmap-data-value">6.2</div>
+                              </div>
+                              <div className="heatmap-data-item">
+                                <div className="heatmap-data-label">
+                                  Max Density
+                                </div>
+                                <div className="heatmap-data-value">9.0</div>
+                              </div>
+                              <div className="heatmap-data-item">
+                                <div className="heatmap-data-label">
+                                  Critical Areas
+                                </div>
+                                <div className="heatmap-data-value critical">
+                                  10
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="heatmap-content">
+                            <CrowdHeatmap
+                              center={{
+                                lat: 12.9716,
+                                lng: 77.5946,
+                              }}
+                              zoom={15}
+                              crowdData={getCurrentCrowdData()}
+                              zones={zones}
+                              showHeatmap={showHeatmap}
+                              showZones={showZones}
+                              onMapLoad={(map) =>
+                                console.log("Map loaded:", map)
+                              }
+                              onZoneClick={handleZoneClick}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="map-section">
+                    <CrowdHeatmap
+                      center={{
+                        lat: 12.9716,
+                        lng: 77.5946,
+                      }}
+                      zoom={15}
+                      crowdData={getCurrentCrowdData()}
+                      zones={zones}
+                      showHeatmap={showHeatmap}
+                      showZones={showZones}
+                      onMapLoad={(map) => console.log("Map loaded:", map)}
+                      onZoneClick={handleZoneClick}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Statistics */}
-          <div className="stats-panel">
-            <h3>📊 Live Statistics</h3>
-            <div className="stat-item">
-              <span className="stat-label">Total Capacity:</span>
-              <span className="stat-value">
-                {stats.totalCapacity.toLocaleString()}
-              </span>
+        {/* Secondary Section - Information Panels */}
+        <aside className="secondary-section">
+          {/* Live Statistics */}
+          <div className="panel stats-panel">
+            <div className="panel-header">
+              <h3 className="panel-title">📊 Live Statistics</h3>
             </div>
-            <div className="stat-item">
-              <span className="stat-label">Current Count:</span>
-              <span className="stat-value">
-                {useVideoData
-                  ? getTotalPeopleCount().toLocaleString()
-                  : stats.totalCurrent.toLocaleString()}
-              </span>
-              {useVideoData && (
-                <span className="stat-source">🤖 AI Detection</span>
-              )}
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Occupancy Rate:</span>
-              <span className="stat-value">{stats.occupancyRate}%</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Critical Zones:</span>
-              <span className="stat-value critical">{stats.criticalZones}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Warning Zones:</span>
-              <span className="stat-value warning">{stats.warningZones}</span>
-            </div>
-          </div>
-
-          {/* Map Controls */}
-          <div className="controls-panel">
-            <h3>🎛️ Map Controls</h3>
-            <label className="control-item">
-              <input
-                type="checkbox"
-                checked={showHeatmap}
-                onChange={(e) => setShowHeatmap(e.target.checked)}
-              />
-              🔥 Show Crowd Heatmap
-            </label>
-            <label className="control-item">
-              <input
-                type="checkbox"
-                checked={showResponders}
-                onChange={(e) => setShowResponders(e.target.checked)}
-              />
-              👮 Show Responders
-            </label>
-            <label className="control-item">
-              <input
-                type="checkbox"
-                checked={showZones}
-                onChange={(e) => setShowZones(e.target.checked)}
-              />
-              🏛️ Show Zones
-            </label>
-            <label className="control-item">
-              <input
-                type="checkbox"
-                checked={videoEnabled}
-                onChange={(e) => setVideoEnabled(e.target.checked)}
-              />
-              📹 Video Feed
-            </label>
-            <label className="control-item">
-              <div className="data-controls">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={useVideoData}
-                    onChange={(e) => setUseVideoData(e.target.checked)}
-                  />
-                  🤖 Use AI Data for Map
-                </label>
-                {useVideoData && videoCrowdData.length > 0 && (
-                  <div className="ai-status">
-                    <span className="ai-indicator">
-                      🎯 Live AI: {getTotalPeopleCount()} people detected
-                    </span>
-                  </div>
-                )}
-              </div>
-            </label>
-          </div>
-
-          {/* Zone List */}
-          <div className="zones-panel">
-            <h3>🏛️ Event Zones</h3>
-            <div className="zones-list">
-              {zones.map((zone) => (
-                <div
-                  key={zone.id}
-                  className={`zone-item ${zone.alertLevel.toLowerCase()}`}
-                  onClick={() => handleZoneClick(zone)}
-                >
-                  <div className="zone-name">{zone.name}</div>
-                  <div className="zone-stats">
-                    <span>
-                      {zone.currentCount}/{zone.capacity}
-                    </span>
-                    <span
-                      className={`alert-level ${zone.alertLevel.toLowerCase()}`}
-                    >
-                      {zone.alertLevel}
-                    </span>
+            <div className="panel-content">
+              <div className="stats-grid">
+                <div className="stat-item">
+                  <div className="stat-label">Total Capacity</div>
+                  <div className="stat-value">
+                    {totalCapacity.toLocaleString()}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Test Controls */}
-          <div className="test-panel">
-            <h3>🧪 Test Controls</h3>
-            <button className="test-btn" onClick={addTestAlert}>
-              Add Test Alert
-            </button>
-          </div>
-        </aside>
-
-        {/* Main Map Area */}
-        <main className="map-container">
-          {predictionEnabled ? (
-            <div className="dashboard-split">
-              <div className="map-prediction-split">
-                {videoEnabled ? (
-                  <div className="map-video-split">
-                    <div className="video-section">
-                      <VideoFeed
-                        onCrowdDataUpdate={handleVideoCrowdData}
-                        onStatusChange={handleVideoStatusChange}
-                        onError={handleVideoError}
-                        cameraLocation={
-                          getEventLocation()?.coordinates || {
-                            lat: 37.7749,
-                            lng: -122.4194,
-                          }
-                        }
-                        autoStart={false}
-                      />
-                    </div>
-                    <div className="map-section">
-                      <CrowdHeatmap
-                        center={
-                          getEventLocation()?.coordinates || {
-                            lat: 37.7749,
-                            lng: -122.4194,
-                          }
-                        }
-                        zoom={15}
-                        crowdData={getCurrentCrowdData()}
-                        zones={zones}
-                        showHeatmap={showHeatmap}
-                        showZones={showZones}
-                        onMapLoad={(map) => console.log("Map loaded:", map)}
-                        onZoneClick={handleZoneClick}
-                      />
-                    </div>
+                <div className="stat-item">
+                  <div className="stat-label">Current Count</div>
+                  <div className="stat-value">
+                    {(useVideoData
+                      ? getTotalPeopleCount()
+                      : currentCount
+                    ).toLocaleString()}
                   </div>
-                ) : (
-                  <GoogleMap
-                    center={
-                      getEventLocation()?.coordinates || {
-                        lat: 37.7749,
-                        lng: -122.4194,
-                      }
-                    }
-                    zoom={15}
-                    crowdData={getCurrentCrowdData()}
-                    responderData={responderData}
-                    zones={zones}
-                    showHeatmap={showHeatmap}
-                    showResponders={showResponders}
-                    showZones={showZones}
-                    onMapLoad={(map) => console.log("Map loaded:", map)}
-                  />
-                )}
-              </div>
-              <div className="prediction-section">
-                <PredictionDashboard
-                  predictionData={predictionData}
-                  alertData={predictionAlerts}
-                  onAlertAcknowledge={handleAlertAcknowledge}
-                  onAlertResolve={handleAlertResolve}
-                  isVisible={predictionEnabled}
-                />
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Occupancy Rate</div>
+                  <div className="stat-value">
+                    {totalCapacity > 0
+                      ? ((currentCount / totalCapacity) * 100).toFixed(1)
+                      : "0.0"}
+                    %
+                  </div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Critical Zones</div>
+                  <div className="stat-value critical">{criticalZones}</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Warning Zones</div>
+                  <div className="stat-value warning">{warningZones}</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Normal Zones</div>
+                  <div className="stat-value normal">{normalZones}</div>
+                </div>
               </div>
             </div>
-          ) : videoEnabled ? (
-            <div className="map-video-split">
-              <div className="video-section">
-                <VideoFeed
-                  onCrowdDataUpdate={handleVideoCrowdData}
-                  onStatusChange={handleVideoStatusChange}
-                  onError={handleVideoError}
-                  cameraLocation={
-                    getEventLocation()?.coordinates || {
-                      lat: 37.7749,
-                      lng: -122.4194,
-                    }
-                  }
-                  autoStart={false}
-                />
-              </div>
-              <div className="map-section">
-                <CrowdHeatmap
-                  center={
-                    getEventLocation()?.coordinates || {
-                      lat: 37.7749,
-                      lng: -122.4194,
-                    }
-                  }
-                  zoom={15}
-                  crowdData={getCurrentCrowdData()}
-                  zones={zones}
-                  showHeatmap={showHeatmap}
-                  showZones={showZones}
-                  onMapLoad={(map) => console.log("Map loaded:", map)}
-                  onZoneClick={handleZoneClick}
-                />
-              </div>
-            </div>
-          ) : (
-            <GoogleMap
-              center={
-                getEventLocation()?.coordinates || {
-                  lat: 37.7749,
-                  lng: -122.4194,
-                }
-              }
-              zoom={15}
-              crowdData={getCurrentCrowdData()}
-              responderData={responderData}
-              zones={zones}
-              showHeatmap={showHeatmap}
-              showResponders={showResponders}
-              showZones={showZones}
-              onMapLoad={(map) => console.log("Map loaded:", map)}
-            />
-          )}
-        </main>
+          </div>
 
-        {/* Right Sidebar - Alerts & Activity */}
-        <aside className="alerts-sidebar">
-          {/* AI Prediction Status Panel */}
-          {predictionEnabled && (
-            <div className="prediction-status-panel">
-              <h3>🔮 AI Prediction System</h3>
-              <div className="prediction-status">
-                <div className="status-item">
-                  <span className="status-label">Model Status:</span>
-                  <span className={`status-value ${modelStatus}`}>
-                    {modelStatus}
-                  </span>
-                </div>
-                <div className="status-item">
-                  <span className="status-label">Last Prediction:</span>
-                  <span className="status-value">
-                    {predictionData?.timestamp
-                      ? new Date(predictionData.timestamp).toLocaleTimeString()
-                      : "No prediction"}
-                  </span>
-                </div>
-                <div className="status-item">
-                  <span className="status-label">Surge Risk:</span>
-                  <span
-                    className={`status-value ${predictionData?.alertLevel || "normal"}`}
-                  >
-                    {predictionData?.surgeRisk?.percentage || 0}%
-                  </span>
-                </div>
-                <div className="status-item">
-                  <span className="status-label">Active Alerts:</span>
-                  <span className="status-value">
-                    {predictionAlerts.length}
-                  </span>
-                </div>
-              </div>
+          {/* Alerts Panel */}
+          <div className="panel alerts-panel">
+            <div className="panel-header">
+              <h3 className="panel-title">🚨 Active Alerts</h3>
+              <span className="alert-count">{(alerts || []).length}</span>
             </div>
-          )}
-
-          {/* Video Status Panel */}
-          {videoEnabled && (
-            <div className="video-status-panel">
-              <h3>🤖 AI Video Analysis</h3>
-              <div className="video-status">
-                <div className="status-item">
-                  <span className="status-label">Status:</span>
-                  <span className={`status-value ${videoStatus}`}>
-                    {videoStatus}
-                  </span>
-                </div>
-                <div className="status-item">
-                  <span className="status-label">AI Data Points:</span>
-                  <span className="status-value">{videoCrowdData.length}</span>
-                </div>
-                <div className="status-item">
-                  <span className="status-label">Data Source:</span>
-                  <span className="status-value">
-                    {useVideoData ? "AI Camera" : "Mock Data"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* AI Intelligence Panel */}
-          <div className="ai-intelligence-panel">
-            <h3>🧠 AI Intelligence Center</h3>
-            <div className="ai-status">
-              <div className="status-item">
-                <span className="status-label">Threat Level:</span>
-                <span
-                  className={`status-value threat-${intelligenceState.overallThreatLevel}`}
-                >
-                  {intelligenceState.overallThreatLevel.toUpperCase()}
-                </span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Active Insights:</span>
-                <span className="status-value">
-                  {intelligenceState.activeInsights.length}
-                </span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">AI Recommendations:</span>
-                <span className="status-value">
-                  {intelligenceState.aiRecommendations.length}
-                </span>
-              </div>
-            </div>
-
-            <div className="ai-services-health">
-              <h4>🔧 AI Services Status</h4>
-              <div className="service-status-grid">
-                <div className="service-item">
-                  <span className="service-name">Gemini AI</span>
-                  <span
-                    className={`service-status ${intelligenceState.systemHealth.gemini}`}
-                  >
-                    {intelligenceState.systemHealth.gemini}
-                  </span>
-                </div>
-                <div className="service-item">
-                  <span className="service-name">Vertex AI</span>
-                  <span
-                    className={`service-status ${intelligenceState.systemHealth.vertexAI}`}
-                  >
-                    {intelligenceState.systemHealth.vertexAI}
-                  </span>
-                </div>
-                <div className="service-item">
-                  <span className="service-name">Vision API</span>
-                  <span
-                    className={`service-status ${intelligenceState.systemHealth.vision}`}
-                  >
-                    {intelligenceState.systemHealth.vision}
-                  </span>
-                </div>
-                <div className="service-item">
-                  <span className="service-name">Forecasting</span>
-                  <span
-                    className={`service-status ${intelligenceState.systemHealth.forecasting}`}
-                  >
-                    {intelligenceState.systemHealth.forecasting}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Alerts */}
-            {aiAlerts.length > 0 && (
-              <div className="ai-alerts-section">
-                <h4>⚡ AI Alerts</h4>
-                <div className="ai-alerts-list">
-                  {aiAlerts.slice(-3).map((alert, index) => (
+            <div className="panel-content">
+              <div className="alerts-list">
+                {(alerts || []).length > 0 ? (
+                  (alerts || []).map((alert) => (
                     <div
-                      key={index}
-                      className={`ai-alert-item ${alert.severity}`}
+                      key={alert.id}
+                      className={`alert-item ${alert.severity.toLowerCase()}`}
                     >
                       <div className="alert-header">
                         <span className="alert-type">{alert.type}</span>
-                        <span className="alert-confidence">
-                          {(alert.confidence * 100).toFixed(0)}%
+                        <span className="alert-time">
+                          {new Date(alert.timestamp).toLocaleTimeString()}
                         </span>
                       </div>
                       <div className="alert-message">{alert.message}</div>
-                      <div className="alert-source">Source: {alert.source}</div>
+                      <div className="alert-zone">📍 {alert.zone}</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Active Alerts */}
-          <div className="alerts-panel">
-            <h3>🚨 Active Alerts</h3>
-            <div className="alerts-list">
-              {alerts
-                .filter((alert) => alert.status === "Active")
-                .map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`alert-item ${alert.severity?.toLowerCase()}`}
-                  >
-                    <div className="alert-header">
-                      <span className="alert-type">{alert.type}</span>
-                      <span className="alert-time">
-                        {new Date(alert.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="alert-zone">{alert.zone}</div>
-                    <div className="alert-message">
-                      {alert.message || alert.summary}
-                    </div>
+                  ))
+                ) : (
+                  <div className="no-alerts">
+                    <div className="no-alerts-icon">✅</div>
+                    <div className="no-alerts-text">All systems normal</div>
                   </div>
-                ))}
-            </div>
-          </div>
-
-          {/* Responder Status */}
-          <div className="responders-panel">
-            <h3>👮 Responder Status</h3>
-            <div className="responders-list">
-              {responderData.map((responder) => (
-                <div key={responder.id} className="responder-item">
-                  <div className="responder-header">
-                    <span className="responder-name">{responder.name}</span>
-                    <span
-                      className={`responder-status ${responder.status.toLowerCase()}`}
-                    >
-                      {responder.status}
-                    </span>
-                  </div>
-                  <div className="responder-type">{responder.type}</div>
-                  <div className="responder-time">
-                    Last update:{" "}
-                    {new Date(responder.lastUpdate).toLocaleTimeString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Selected Zone Details */}
-          {selectedZone && (
-            <div className="zone-details-panel">
-              <h3>🏛️ Zone Details</h3>
-              <div className="zone-details">
-                <h4>{selectedZone.name}</h4>
-                <div className="detail-item">
-                  <span>Capacity:</span>
-                  <span>{selectedZone.capacity}</span>
-                </div>
-                <div className="detail-item">
-                  <span>Current:</span>
-                  <span>{selectedZone.currentCount}</span>
-                </div>
-                <div className="detail-item">
-                  <span>Density:</span>
-                  <span>{selectedZone.density}</span>
-                </div>
-                <div className="detail-item">
-                  <span>Alert Level:</span>
-                  <span
-                    className={`alert-level ${selectedZone.alertLevel.toLowerCase()}`}
-                  >
-                    {selectedZone.alertLevel}
-                  </span>
-                </div>
-                <button
-                  className="close-details"
-                  onClick={() => setSelectedZone(null)}
-                >
-                  Close
-                </button>
+                )}
               </div>
             </div>
-          )}
+          </div>
+
+          {/* AI Intelligence Center */}
+          <div className="panel ai-panel">
+            <div className="panel-header">
+              <h3 className="panel-title">🧠 AI Intelligence Center</h3>
+            </div>
+            <div className="panel-content">
+              <div className="ai-status">
+                <div className="ai-item">
+                  <span className="ai-label">Threat Level:</span>
+                  <span className="ai-value low">LOW</span>
+                </div>
+                <div className="ai-item">
+                  <span className="ai-label">Prediction Accuracy:</span>
+                  <span className="ai-value">85%</span>
+                </div>
+                <div className="ai-item">
+                  <span className="ai-label">Active Models:</span>
+                  <span className="ai-value">3</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </aside>
       </div>
 
-      {/* Data Insights Dashboard */}
-      <DataInsightsDashboard
-        isVisible={showInsightsDashboard}
-        crowdData={useVideoData ? videoCrowdData : crowdData}
-        alertData={alerts}
-        predictionData={predictionData}
-      />
-
-      {/* Emergency Floating Action Button */}
-      <button
-        className="emergency-fab"
-        onClick={() => {
-          if (alertSystem) {
-            alertSystem.createEmergencyAlert({
-              type: "EMERGENCY_OVERRIDE",
-              severity: "Critical",
-              message:
-                "Emergency situation declared - Manual override activated",
-              timestamp: new Date().toISOString(),
-              zone: "All Zones",
-            });
-          }
-          // Add emergency notification
-          if (
-            "Notification" in window &&
-            Notification.permission === "granted"
-          ) {
-            new Notification("🚨 EMERGENCY ALERT", {
-              body: "Emergency situation declared. All units respond immediately.",
-              icon: "/favicon.ico",
-              tag: "emergency",
-            });
-          }
-        }}
-        title="Emergency Alert - Click to declare emergency situation"
-      >
-        🚨
-      </button>
-
-      {/* AI Status Indicator */}
-      <div className="ai-status-indicator">
-        <div className={`ai-status-dot ${modelStatus}`}></div>
-        <span>AI Model: {modelStatus}</span>
-      </div>
+      {/* Insights Dashboard - Full Width Overlay */}
+      {showInsightsDashboard && (
+        <div className="insights-overlay">
+          <div className="insights-container">
+            <div className="insights-header">
+              <h2>📊 Data Insights Dashboard</h2>
+              <button
+                className="close-insights"
+                onClick={() => setShowInsightsDashboard(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <DataInsightsDashboard
+              crowdData={getCurrentCrowdData()}
+              zones={zones}
+              alerts={alerts}
+              responderData={responderData}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

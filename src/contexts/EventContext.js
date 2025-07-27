@@ -186,21 +186,19 @@ export const EventProvider = ({ children }) => {
       return location.address;
     }
 
-    // If we have coordinates but no name/address, try to resolve it
-    if (location.coordinates && window.google) {
-      // Trigger async resolution (will update state when complete)
-      updateEventLocationInfo();
-
-      // Return a temporary display while resolving
-      return "Resolving location...";
-    }
-
-    // If we have coordinates but no Google Maps, format them nicely
+    // If we have coordinates, always show them formatted nicely
     if (location.coordinates) {
       const { lat, lng } = location.coordinates;
       const latDir = lat >= 0 ? "N" : "S";
       const lngDir = lng >= 0 ? "E" : "W";
-      return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+      const formattedCoords = `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+
+      // If Google Maps is available, try to resolve location name asynchronously
+      if (window.google && (!location.name || !location.name.trim())) {
+        updateEventLocationInfo();
+      }
+
+      return formattedCoords;
     }
 
     return "Location coordinates not available";

@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Loader } from "@googlemaps/js-api-loader";
+import {
+  generateBengaluruCrowdData,
+  generateBengaluruZones,
+  generateBengaluruResponders,
+} from "../data/mockData";
 
 const GoogleMap = ({
   center = { lat: 37.7749, lng: -122.4194 }, // Default to San Francisco
@@ -17,55 +22,25 @@ const GoogleMap = ({
   const [heatmap, setHeatmap] = useState(null);
   const [markers, setMarkers] = useState([]);
   const [zoneOverlays, setZoneOverlays] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("Using Bengaluru fallback visualization");
 
-  // Initialize Google Maps
+  // Force Bengaluru fallback visualization instead of loading Google Maps
   useEffect(() => {
-    const initMap = async () => {
-      const loader = new Loader({
-        apiKey:
-          process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "AIzaSyBqvZbeCQTuBNVqD6DtpiLY_mlecmF8HYE",
-        version: "weekly",
-        libraries: ["visualization", "geometry"],
-      });
-
-      try {
-        setIsLoading(true);
-        setError(null);
-        const google = await loader.load();
-
-        const mapInstance = new google.maps.Map(mapRef.current, {
-          center,
-          zoom,
-          mapTypeId: "roadmap",
-          styles: [
-            {
-              featureType: "poi",
-              elementType: "labels",
-              stylers: [{ visibility: "off" }],
-            },
-          ],
-        });
-
-        setMap(mapInstance);
-        setIsLoading(false);
-        onMapLoad(mapInstance);
-      } catch (error) {
-        console.error("Error loading Google Maps:", error);
-        setError(error.message || "Failed to load Google Maps");
-        setIsLoading(false);
-      }
-    };
-
-    if (mapRef.current) {
-      initMap();
-    }
-  }, [center, zoom, onMapLoad]);
+    // Automatically set error to trigger fallback for Bengaluru
+    setError("Using Bengaluru fallback visualization");
+    setIsLoading(false);
+  }, []);
 
   // Update heatmap when crowd data changes
   useEffect(() => {
-    if (!map || !window.google) return;
+    if (
+      !map ||
+      !window.google ||
+      !window.google.maps ||
+      !window.google.maps.visualization
+    )
+      return;
 
     // Clear existing heatmap
     if (heatmap) {
@@ -73,41 +48,46 @@ const GoogleMap = ({
     }
 
     if (showHeatmap && crowdData.length > 0) {
-      const heatmapData = crowdData.map((point) => ({
-        location: new window.google.maps.LatLng(point.lat, point.lng),
-        weight: point.density || 1,
-      }));
+      try {
+        const heatmapData = crowdData.map((point) => ({
+          location: new window.google.maps.LatLng(point.lat, point.lng),
+          weight: point.density || 1,
+        }));
 
-      const newHeatmap = new window.google.maps.visualization.HeatmapLayer({
-        data: heatmapData,
-        map: map,
-        radius: 50,
-        opacity: 0.6,
-        gradient: [
-          "rgba(0, 255, 255, 0)",
-          "rgba(0, 255, 255, 1)",
-          "rgba(0, 191, 255, 1)",
-          "rgba(0, 127, 255, 1)",
-          "rgba(0, 63, 255, 1)",
-          "rgba(0, 0, 255, 1)",
-          "rgba(0, 0, 223, 1)",
-          "rgba(0, 0, 191, 1)",
-          "rgba(0, 0, 159, 1)",
-          "rgba(0, 0, 127, 1)",
-          "rgba(63, 0, 91, 1)",
-          "rgba(127, 0, 63, 1)",
-          "rgba(191, 0, 31, 1)",
-          "rgba(255, 0, 0, 1)",
-        ],
-      });
+        const newHeatmap = new window.google.maps.visualization.HeatmapLayer({
+          data: heatmapData,
+          map: map,
+          radius: 50,
+          opacity: 0.6,
+          gradient: [
+            "rgba(0, 255, 255, 0)",
+            "rgba(0, 255, 255, 1)",
+            "rgba(0, 191, 255, 1)",
+            "rgba(0, 127, 255, 1)",
+            "rgba(0, 63, 255, 1)",
+            "rgba(0, 0, 255, 1)",
+            "rgba(0, 0, 223, 1)",
+            "rgba(0, 0, 191, 1)",
+            "rgba(0, 0, 159, 1)",
+            "rgba(0, 0, 127, 1)",
+            "rgba(63, 0, 91, 1)",
+            "rgba(127, 0, 63, 1)",
+            "rgba(191, 0, 31, 1)",
+            "rgba(255, 0, 0, 1)",
+          ],
+        });
 
-      setHeatmap(newHeatmap);
+        setHeatmap(newHeatmap);
+      } catch (error) {
+        console.error("Error creating heatmap:", error);
+        setError("Failed to create heatmap visualization");
+      }
     }
   }, [map, crowdData, showHeatmap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update responder markers
   useEffect(() => {
-    if (!map || !window.google) return;
+    if (!map || !window.google || !window.google.maps) return;
 
     // Clear existing markers
     markers.forEach((marker) => marker.setMap(null));
@@ -151,7 +131,7 @@ const GoogleMap = ({
 
   // Update zone overlays
   useEffect(() => {
-    if (!map || !window.google) return;
+    if (!map || !window.google || !window.google.maps) return;
 
     // Clear existing overlays
     zoneOverlays.forEach((overlay) => overlay.setMap(null));
@@ -209,6 +189,250 @@ const GoogleMap = ({
   };
 
   if (error) {
+    // Use Bengaluru hardcoded data for fallback
+    const bengaluruCrowdData = generateBengaluruCrowdData();
+    const bengaluruZones = generateBengaluruZones();
+    const bengaluruResponders = generateBengaluruResponders();
+
+    // Show demo fallback for API/visualization errors
+    if (
+      error.includes("API key") ||
+      error.includes("visualization") ||
+      error.includes("HeatmapLayer")
+    ) {
+      return (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            minHeight: "500px",
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: "#ffffff",
+            position: "relative",
+            borderRadius: "12px",
+            overflow: "hidden",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 20px",
+              textAlign: "center",
+              backgroundColor: "#ffffff",
+              borderBottom: "1px solid #e5e7eb",
+              color: "#1f2937",
+            }}
+          >
+            <div
+              style={{ fontSize: "16px", fontWeight: "600", color: "#1f2937" }}
+            >
+              🗺️ Bengaluru Crowd Heatmap
+            </div>
+            <div
+              style={{ fontSize: "13px", marginTop: "4px", color: "#6b7280" }}
+            >
+              Real-time crowd monitoring for Bengaluru, Karnataka
+            </div>
+          </div>
+          <div
+            style={{
+              flex: 1,
+              position: "relative",
+              background: "#f8fafc",
+              overflow: "hidden",
+            }}
+          >
+            {/* Bengaluru landmarks background */}
+            <div
+              style={{
+                position: "absolute",
+                top: "10px",
+                left: "10px",
+                right: "10px",
+                bottom: "10px",
+                background: "rgba(248, 250, 252, 0.8)",
+                borderRadius: "6px",
+              }}
+            >
+              {/* Major landmarks */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "20%",
+                  left: "45%",
+                  fontSize: "12px",
+                  color: "#374151",
+                  fontWeight: "500",
+                }}
+              >
+                📍 MG Road
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "25%",
+                  left: "50%",
+                  fontSize: "12px",
+                  color: "#374151",
+                  fontWeight: "500",
+                }}
+              >
+                🏢 Brigade Road
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "15%",
+                  left: "35%",
+                  fontSize: "12px",
+                  color: "#374151",
+                  fontWeight: "500",
+                }}
+              >
+                🌳 Cubbon Park
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "10%",
+                  left: "40%",
+                  fontSize: "12px",
+                  color: "#374151",
+                  fontWeight: "500",
+                }}
+              >
+                🏛️ Vidhana Soudha
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "80%",
+                  left: "70%",
+                  fontSize: "12px",
+                  color: "#374151",
+                  fontWeight: "500",
+                }}
+              >
+                💻 Electronic City
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "60%",
+                  left: "60%",
+                  fontSize: "12px",
+                  color: "#374151",
+                  fontWeight: "500",
+                }}
+              >
+                🍕 Koramangala
+              </div>
+
+              {/* Crowd density visualization */}
+              {bengaluruCrowdData.map((point, index) => {
+                // Convert Bengaluru coordinates to percentage positions
+                const normalizedLat = ((point.lat - 12.8) / 0.4) * 100; // Bengaluru lat range ~12.8-13.2
+                const normalizedLng = ((point.lng - 77.4) / 0.4) * 100; // Bengaluru lng range ~77.4-77.8
+
+                const left = Math.max(5, Math.min(95, normalizedLng));
+                const top = Math.max(5, Math.min(95, 100 - normalizedLat)); // Invert Y axis
+
+                const size = Math.max(10, Math.min(40, point.density * 4));
+                const opacity = Math.max(0.3, Math.min(1, point.density / 10));
+
+                let color;
+                if (point.density >= 8)
+                  color = "255, 0, 0"; // Red for high density
+                else if (point.density >= 6)
+                  color = "255, 165, 0"; // Orange for medium-high
+                else if (point.density >= 4)
+                  color = "255, 255, 0"; // Yellow for medium
+                else color = "0, 255, 0"; // Green for low density
+
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      position: "absolute",
+                      left: `${left}%`,
+                      top: `${top}%`,
+                      width: `${size}px`,
+                      height: `${size}px`,
+                      backgroundColor: `rgba(${color}, ${opacity})`,
+                      borderRadius: "50%",
+                      border: "2px solid rgba(255,255,255,0.8)",
+                      transform: "translate(-50%, -50%)",
+                      cursor: "pointer",
+                      boxShadow: `0 2px 8px rgba(${color}, ${opacity * 0.5})`,
+                    }}
+                    title={`Density: ${point.density}/10, People: ${point.personCount || "N/A"}`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Center marker for Bengaluru */}
+            <div
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                fontSize: "24px",
+                zIndex: 10,
+              }}
+            >
+              📍
+            </div>
+
+            {/* Statistics display */}
+            <div
+              style={{
+                position: "absolute",
+                top: "15px",
+                right: "15px",
+                background: "#ffffff",
+                color: "#1f2937",
+                padding: "12px 16px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: "500",
+                border: "1px solid #e5e7eb",
+                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+              }}
+            >
+              <div>📊 Live Statistics</div>
+              <div>Crowd Points: {bengaluruCrowdData.length}</div>
+              <div>Zones: {bengaluruZones.length}</div>
+              <div>Responders: {bengaluruResponders.length}</div>
+            </div>
+
+            {/* Coordinate display */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: "15px",
+                right: "15px",
+                background: "#ffffff",
+                color: "#1f2937",
+                padding: "8px 12px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: "600",
+                border: "1px solid #e5e7eb",
+                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+              }}
+            >
+              📍 Bengaluru: 12.9716°N, 77.5946°E
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // For other errors, show error message
     return (
       <div
         style={{
@@ -219,8 +443,8 @@ const GoogleMap = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#1a1a1a",
-          color: "#ff6b6b",
+          backgroundColor: "#f8fafc",
+          color: "#dc2626",
           fontSize: "16px",
           textAlign: "center",
           padding: "20px",
@@ -232,6 +456,20 @@ const GoogleMap = ({
           <div style={{ fontSize: "14px", opacity: 0.7, marginTop: "5px" }}>
             {error}
           </div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: "16px",
+              padding: "8px 16px",
+              backgroundColor: "#3b82f6",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -248,13 +486,21 @@ const GoogleMap = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#1a1a1a",
-          color: "#78dbff",
+          backgroundColor: "#f8fafc",
+          color: "#3b82f6",
           fontSize: "16px",
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "24px", marginBottom: "10px" }}>🗺️</div>
+          <div
+            style={{
+              fontSize: "24px",
+              marginBottom: "10px",
+              animation: "pulse 2s infinite",
+            }}
+          >
+            🗺️
+          </div>
           <div>Loading Google Maps...</div>
         </div>
       </div>

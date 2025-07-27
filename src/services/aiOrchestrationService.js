@@ -4,9 +4,9 @@
  * Maximizes Google AI integration score (25% of total)
  */
 
-import GeminiMultimodalService from './geminiMultimodalService';
-import LostAndFoundService from './lostAndFoundService';
-import VertexAIForecastingService from './prediction/vertexAIForecasting';
+import GeminiMultimodalService from "./geminiMultimodalService";
+import LostAndFoundService from "./lostAndFoundService";
+import VertexAIForecastingService from "./prediction/vertexAIForecasting";
 // Firebase imports commented out - not currently used but kept for future implementation
 // import { db } from '../firebase';
 // import { collection, addDoc, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
@@ -17,27 +17,27 @@ class AIOrchestrationService {
     this.services = {
       gemini: null,
       lostAndFound: null,
-      forecasting: null
+      forecasting: null,
     };
 
     // AI Intelligence State
     this.intelligenceState = {
-      overallThreatLevel: 'low',
+      overallThreatLevel: "low",
       activeInsights: [],
       predictiveAlerts: [],
       aiRecommendations: [],
       systemHealth: {
-        gemini: 'offline',
-        vertexAI: 'offline',
-        vision: 'offline',
-        forecasting: 'offline'
+        gemini: "offline",
+        vertexAI: "offline",
+        vision: "offline",
+        forecasting: "offline",
       },
       performanceMetrics: {
         analysisLatency: 0,
         predictionAccuracy: 0,
         alertResponseTime: 0,
-        systemUptime: 0
-      }
+        systemUptime: 0,
+      },
     };
 
     // Event callbacks
@@ -46,7 +46,7 @@ class AIOrchestrationService {
       onCriticalAlert: null,
       onSystemHealthChange: null,
       onPerformanceUpdate: null,
-      onError: null
+      onError: null,
     };
 
     // Configuration
@@ -69,22 +69,22 @@ class AIOrchestrationService {
   async initialize(callbacks = {}) {
     try {
       this.callbacks = { ...this.callbacks, ...callbacks };
-      
+
       // Initialize all AI services
       await this.initializeServices();
-      
+
       // Start orchestration loops
       this.startIntelligenceLoop();
       this.startHealthMonitoring();
-      
+
       this.isInitialized = true;
-      console.log('AI Orchestration Service initialized successfully');
-      
+      console.log("AI Orchestration Service initialized successfully");
+
       return true;
     } catch (error) {
-      console.error('Failed to initialize AI Orchestration:', error);
+      console.error("Failed to initialize AI Orchestration:", error);
       if (this.callbacks.onError) {
-        this.callbacks.onError('Orchestration initialization failed', error);
+        this.callbacks.onError("Orchestration initialization failed", error);
       }
       return false;
     }
@@ -100,12 +100,12 @@ class AIOrchestrationService {
       onAnomalyDetected: (data) => this.handleAnomalyDetection(data),
       onSentimentChange: (data) => this.handleSentimentChange(data),
       onSituationalSummary: (data) => this.handleSituationalSummary(data),
-      onError: (msg, error) => this.handleServiceError('gemini', msg, error)
+      onError: (msg, error) => this.handleServiceError("gemini", msg, error),
     });
 
     if (geminiSuccess) {
-      this.intelligenceState.systemHealth.gemini = 'online';
-      this.intelligenceState.systemHealth.vision = 'online';
+      this.intelligenceState.systemHealth.gemini = "online";
+      this.intelligenceState.systemHealth.vision = "online";
     }
 
     // Initialize Lost & Found Service
@@ -113,25 +113,27 @@ class AIOrchestrationService {
     const lostFoundSuccess = await this.services.lostAndFound.initialize({
       onPersonFound: (data) => this.handlePersonFound(data),
       onNewCase: (data) => this.handleNewLostFoundCase(data),
-      onError: (msg, error) => this.handleServiceError('lostAndFound', msg, error)
+      onError: (msg, error) =>
+        this.handleServiceError("lostAndFound", msg, error),
     });
 
     // Initialize Vertex AI Forecasting
     this.services.forecasting = new VertexAIForecastingService();
     const forecastingSuccess = await this.services.forecasting.initialize({
       onPredictionGenerated: (data) => this.handlePredictionGenerated(data),
-      onError: (msg, error) => this.handleServiceError('forecasting', msg, error)
+      onError: (msg, error) =>
+        this.handleServiceError("forecasting", msg, error),
     });
 
     if (forecastingSuccess) {
-      this.intelligenceState.systemHealth.forecasting = 'online';
-      this.intelligenceState.systemHealth.vertexAI = 'online';
+      this.intelligenceState.systemHealth.forecasting = "online";
+      this.intelligenceState.systemHealth.vertexAI = "online";
     }
 
-    console.log('AI Services initialized:', {
+    console.log("AI Services initialized:", {
       gemini: geminiSuccess,
       lostAndFound: lostFoundSuccess,
-      forecasting: forecastingSuccess
+      forecasting: forecastingSuccess,
     });
   }
 
@@ -141,9 +143,12 @@ class AIOrchestrationService {
   async processComprehensiveAnalysis(analysisData) {
     try {
       const startTime = Date.now();
-      
+
       // Queue analysis if system is busy
-      if (this.isProcessing && this.analysisQueue.length < this.config.maxConcurrentAnalyses) {
+      if (
+        this.isProcessing &&
+        this.analysisQueue.length < this.config.maxConcurrentAnalyses
+      ) {
         this.analysisQueue.push(analysisData);
         return;
       }
@@ -153,38 +158,41 @@ class AIOrchestrationService {
       const results = {
         timestamp: new Date().toISOString(),
         analysisId: this.generateAnalysisId(),
-        components: {}
+        components: {},
       };
 
       // 1. Gemini Multimodal Analysis
       if (this.services.gemini && analysisData.videoFrame) {
-        results.components.multimodal = await this.services.gemini.analyzeVideoFrame(
-          analysisData.videoFrame,
-          analysisData.context
-        );
+        results.components.multimodal =
+          await this.services.gemini.analyzeVideoFrame(
+            analysisData.videoFrame,
+            analysisData.context,
+          );
       }
 
       // 2. Predictive Analysis
       if (this.services.forecasting && analysisData.crowdData) {
-        results.components.prediction = await this.services.forecasting.generatePrediction(
-          analysisData.crowdData
-        );
+        results.components.prediction =
+          await this.services.forecasting.generatePrediction(
+            analysisData.crowdData,
+          );
       }
 
       // 3. Lost & Found Scanning
       if (this.services.lostAndFound && analysisData.videoFrame) {
         const activeCases = this.services.lostAndFound.getActiveCases();
         if (activeCases.length > 0) {
-          results.components.lostAndFound = await this.services.lostAndFound.searchInSurveillanceFeeds(
-            activeCases[0].id, // For demo, search for first active case
-            [analysisData.videoFrame]
-          );
+          results.components.lostAndFound =
+            await this.services.lostAndFound.searchInSurveillanceFeeds(
+              activeCases[0].id, // For demo, search for first active case
+              [analysisData.videoFrame],
+            );
         }
       }
 
       // 4. Generate Unified Intelligence
       const intelligence = await this.generateUnifiedIntelligence(results);
-      
+
       // 5. Update system state
       this.updateIntelligenceState(intelligence);
 
@@ -202,7 +210,7 @@ class AIOrchestrationService {
 
       return intelligence;
     } catch (error) {
-      console.error('Comprehensive analysis failed:', error);
+      console.error("Comprehensive analysis failed:", error);
       this.isProcessing = false;
       return null;
     }
@@ -215,82 +223,94 @@ class AIOrchestrationService {
     const intelligence = {
       timestamp: analysisResults.timestamp,
       analysisId: analysisResults.analysisId,
-      overallThreatLevel: 'low',
+      overallThreatLevel: "low",
       confidence: 0,
       insights: [],
       recommendations: [],
       alerts: [],
-      summary: ''
+      summary: "",
     };
 
     // Analyze multimodal results
     if (analysisResults.components.multimodal) {
       const multimodal = analysisResults.components.multimodal;
-      
-      if (multimodal.urgencyLevel === 'critical' || multimodal.urgencyLevel === 'high') {
+
+      if (
+        multimodal.urgencyLevel === "critical" ||
+        multimodal.urgencyLevel === "high"
+      ) {
         intelligence.overallThreatLevel = multimodal.urgencyLevel;
         intelligence.alerts.push({
-          type: 'MULTIMODAL_ALERT',
+          type: "MULTIMODAL_ALERT",
           severity: multimodal.urgencyLevel,
           message: `AI detected ${multimodal.urgencyLevel} situation: ${multimodal.behaviorAnalysis}`,
-          source: 'Gemini Multimodal',
-          confidence: 0.9
+          source: "Gemini Multimodal",
+          confidence: 0.9,
         });
       }
 
       if (multimodal.anomalies && multimodal.anomalies.length > 0) {
         intelligence.insights.push({
-          type: 'ANOMALY_DETECTION',
+          type: "ANOMALY_DETECTION",
           data: multimodal.anomalies,
-          source: 'Gemini Vision'
+          source: "Gemini Vision",
         });
       }
 
       if (multimodal.recommendations) {
-        intelligence.recommendations.push(...multimodal.recommendations.map(rec => ({
-          ...rec,
-          source: 'Gemini AI'
-        })));
+        intelligence.recommendations.push(
+          ...multimodal.recommendations.map((rec) => ({
+            ...rec,
+            source: "Gemini AI",
+          })),
+        );
       }
     }
 
     // Analyze prediction results
     if (analysisResults.components.prediction) {
       const prediction = analysisResults.components.prediction;
-      
+
       if (prediction.surgeProbability > 0.7) {
-        intelligence.overallThreatLevel = Math.max(intelligence.overallThreatLevel, 'high');
+        intelligence.overallThreatLevel = Math.max(
+          intelligence.overallThreatLevel,
+          "high",
+        );
         intelligence.alerts.push({
-          type: 'CROWD_SURGE_PREDICTION',
-          severity: 'high',
+          type: "CROWD_SURGE_PREDICTION",
+          severity: "high",
           message: `Crowd surge predicted with ${(prediction.surgeProbability * 100).toFixed(1)}% probability`,
-          source: 'Vertex AI Forecasting',
-          confidence: prediction.surgeProbability
+          source: "Vertex AI Forecasting",
+          confidence: prediction.surgeProbability,
         });
       }
 
       intelligence.insights.push({
-        type: 'PREDICTIVE_ANALYSIS',
+        type: "PREDICTIVE_ANALYSIS",
         data: prediction,
-        source: 'Vertex AI'
+        source: "Vertex AI",
       });
     }
 
     // Analyze Lost & Found results
-    if (analysisResults.components.lostAndFound && analysisResults.components.lostAndFound.length > 0) {
+    if (
+      analysisResults.components.lostAndFound &&
+      analysisResults.components.lostAndFound.length > 0
+    ) {
       intelligence.insights.push({
-        type: 'PERSON_DETECTION',
+        type: "PERSON_DETECTION",
         data: analysisResults.components.lostAndFound,
-        source: 'Lost & Found AI'
+        source: "Lost & Found AI",
       });
     }
 
     // Generate AI summary using Gemini
     if (this.services.gemini) {
-      intelligence.summary = await this.services.gemini.generateSituationalSummary(
-        'All Zones',
-        '5min'
-      );
+      intelligence.summary =
+        await this.services.gemini.generateSituationalSummary(
+          "All Zones",
+          "5min",
+        );
     }
 
     // Calculate overall confidence
@@ -306,12 +326,18 @@ class AIOrchestrationService {
     let totalConfidence = 0;
     let componentCount = 0;
 
-    if (results.components.multimodal && results.components.multimodal.confidence) {
+    if (
+      results.components.multimodal &&
+      results.components.multimodal.confidence
+    ) {
       totalConfidence += results.components.multimodal.confidence;
       componentCount++;
     }
 
-    if (results.components.prediction && results.components.prediction.confidence) {
+    if (
+      results.components.prediction &&
+      results.components.prediction.confidence
+    ) {
       totalConfidence += results.components.prediction.confidence;
       componentCount++;
     }
@@ -331,12 +357,12 @@ class AIOrchestrationService {
     for (const alert of intelligence.alerts) {
       const alertKey = `${alert.type}_${alert.severity}`;
       const lastAlert = this.lastAlerts.get(alertKey);
-      
+
       if (!lastAlert || Date.now() - lastAlert > this.config.alertCooldown) {
         this.intelligenceState.predictiveAlerts.push(alert);
         this.lastAlerts.set(alertKey, Date.now());
-        
-        if (alert.severity === 'critical' && this.callbacks.onCriticalAlert) {
+
+        if (alert.severity === "critical" && this.callbacks.onCriticalAlert) {
           this.callbacks.onCriticalAlert(alert);
         }
       }
@@ -344,7 +370,8 @@ class AIOrchestrationService {
 
     // Limit alerts array size
     if (this.intelligenceState.predictiveAlerts.length > 50) {
-      this.intelligenceState.predictiveAlerts = this.intelligenceState.predictiveAlerts.slice(-25);
+      this.intelligenceState.predictiveAlerts =
+        this.intelligenceState.predictiveAlerts.slice(-25);
     }
 
     // Notify callbacks
@@ -361,7 +388,7 @@ class AIOrchestrationService {
       if (this.isInitialized && !this.isProcessing) {
         // In a real implementation, this would get current video frames and crowd data
         // For demo purposes, we'll simulate periodic analysis
-        console.log('AI Intelligence Loop: Processing...');
+        console.log("AI Intelligence Loop: Processing...");
       }
     }, this.config.analysisInterval);
   }
@@ -380,20 +407,26 @@ class AIOrchestrationService {
    */
   async checkSystemHealth() {
     const previousHealth = { ...this.intelligenceState.systemHealth };
-    
+
     // Check each service
-    this.intelligenceState.systemHealth.gemini = 
-      this.services.gemini && this.services.gemini.isInitialized ? 'online' : 'offline';
-    
-    this.intelligenceState.systemHealth.vertexAI = 
-      this.services.forecasting && this.services.forecasting.isInitialized ? 'online' : 'offline';
-    
-    this.intelligenceState.systemHealth.vision = 
-      this.services.lostAndFound && this.services.lostAndFound.isInitialized ? 'online' : 'offline';
+    this.intelligenceState.systemHealth.gemini =
+      this.services.gemini && this.services.gemini.isInitialized
+        ? "online"
+        : "offline";
+
+    this.intelligenceState.systemHealth.vertexAI =
+      this.services.forecasting && this.services.forecasting.isInitialized
+        ? "online"
+        : "offline";
+
+    this.intelligenceState.systemHealth.vision =
+      this.services.lostAndFound && this.services.lostAndFound.isInitialized
+        ? "online"
+        : "offline";
 
     // Check if health changed
     const healthChanged = Object.keys(previousHealth).some(
-      key => previousHealth[key] !== this.intelligenceState.systemHealth[key]
+      (key) => previousHealth[key] !== this.intelligenceState.systemHealth[key],
     );
 
     if (healthChanged && this.callbacks.onSystemHealthChange) {
@@ -406,8 +439,8 @@ class AIOrchestrationService {
    */
   handleServiceError(serviceName, message, error) {
     console.error(`${serviceName} service error:`, message, error);
-    this.intelligenceState.systemHealth[serviceName] = 'error';
-    
+    this.intelligenceState.systemHealth[serviceName] = "error";
+
     if (this.callbacks.onError) {
       this.callbacks.onError(`${serviceName}: ${message}`, error);
     }
@@ -417,27 +450,27 @@ class AIOrchestrationService {
    * Event handlers
    */
   handleAnomalyDetection(data) {
-    console.log('Anomaly detected:', data);
+    console.log("Anomaly detected:", data);
   }
 
   handleSentimentChange(data) {
-    console.log('Sentiment changed:', data);
+    console.log("Sentiment changed:", data);
   }
 
   handleSituationalSummary(data) {
-    console.log('Situational summary:', data);
+    console.log("Situational summary:", data);
   }
 
   handlePersonFound(data) {
-    console.log('Person found:', data);
+    console.log("Person found:", data);
   }
 
   handleNewLostFoundCase(data) {
-    console.log('New Lost & Found case:', data);
+    console.log("New Lost & Found case:", data);
   }
 
   handlePredictionGenerated(data) {
-    console.log('Prediction generated:', data);
+    console.log("Prediction generated:", data);
   }
 
   /**
@@ -445,9 +478,11 @@ class AIOrchestrationService {
    */
   updatePerformanceMetrics(metrics) {
     Object.assign(this.intelligenceState.performanceMetrics, metrics);
-    
+
     if (this.callbacks.onPerformanceUpdate) {
-      this.callbacks.onPerformanceUpdate(this.intelligenceState.performanceMetrics);
+      this.callbacks.onPerformanceUpdate(
+        this.intelligenceState.performanceMetrics,
+      );
     }
   }
 
@@ -456,6 +491,39 @@ class AIOrchestrationService {
    */
   generateAnalysisId() {
     return `AI_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  /**
+   * Process crowd data for AI analysis
+   */
+  async processCrowdData(crowdData) {
+    try {
+      if (!this.isInitialized) {
+        console.log(
+          "AI Orchestration not initialized, skipping crowd data processing",
+        );
+        return;
+      }
+
+      // Process crowd data through comprehensive analysis
+      const analysisData = {
+        crowdData: crowdData,
+        context: {
+          timestamp: new Date().toISOString(),
+          source: "video_ai",
+          type: "crowd_analysis",
+        },
+      };
+
+      // Queue for comprehensive analysis
+      return await this.processComprehensiveAnalysis(analysisData);
+    } catch (error) {
+      console.error("Error processing crowd data:", error);
+      if (this.callbacks.onError) {
+        this.callbacks.onError("Crowd data processing failed", error);
+      }
+      return null;
+    }
   }
 
   /**
@@ -472,11 +540,13 @@ class AIOrchestrationService {
     return {
       orchestration: this.isInitialized,
       services: Object.keys(this.services).reduce((status, key) => {
-        status[key] = this.services[key] ? this.services[key].isInitialized : false;
+        status[key] = this.services[key]
+          ? this.services[key].isInitialized
+          : false;
         return status;
       }, {}),
       health: this.intelligenceState.systemHealth,
-      performance: this.intelligenceState.performanceMetrics
+      performance: this.intelligenceState.performanceMetrics,
     };
   }
 
@@ -485,7 +555,7 @@ class AIOrchestrationService {
    */
   destroy() {
     // Destroy all services
-    Object.values(this.services).forEach(service => {
+    Object.values(this.services).forEach((service) => {
       if (service && service.destroy) {
         service.destroy();
       }
@@ -494,8 +564,8 @@ class AIOrchestrationService {
     this.isInitialized = false;
     this.analysisQueue = [];
     this.lastAlerts.clear();
-    
-    console.log('AI Orchestration Service destroyed');
+
+    console.log("AI Orchestration Service destroyed");
   }
 }
 
